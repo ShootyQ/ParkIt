@@ -12,7 +12,7 @@ import {
   type Point,
 } from "./game";
 const app = document.querySelector<HTMLDivElement>("#app")!;
-app.innerHTML = `<header><a class="brand" href="./"><span class="brand-icon">P<span>↗</span></span>park<span class="brand-light">it.</span></a><span class="tagline">A LITTLE LOT. A LOT GOING ON.</span><div class="header-right"><span class="live-dot"></span> OPEN FOR BUSINESS <button id="sound" aria-label="Toggle sound">♪</button></div></header><main><section class="title-row"><div><div class="eyebrow">THE EVERYDAY, SLIGHTLY MORE CHAOTIC</div><h1>Your lot. Your rules.<span> Mostly.</span></h1></div><button id="help" class="text-button">↗ How to play</button></section><section class="game-shell"><div class="toolbar"><div class="stats"><div><small>TODAY’S SCORE</small><strong id="score">0000</strong></div><div><small>PERSONAL BEST</small><strong id="best">0000</strong></div><div class="traffic"><small>TRAFFIC LEVEL</small><strong><span id="level">01</span><i>▂ ▄ ▆</i></strong></div></div><div class="tools"><span id="lives" aria-label="3 lives">♥ ♥ ♥</span><button id="pause" aria-label="Pause game">Ⅱ</button><button id="restart" aria-label="Restart game">↻</button></div></div><div class="canvas-wrap"><canvas aria-label="Parking lot. Draw from a car to an empty space." width="1440" height="900"></canvas><div id="overlay"></div><div id="toast" role="status"></div><div class="lot-label">NORTHSIDE PLAZA <span>•</span> LOT 01</div></div><div class="game-footer"><span><b class="green-dot"></b> <span id="hint">Grab a car. Draw a route. Try not to meet the neighbors.</span></span><span class="weather">☀ 72° &nbsp; A GOOD DAY TO PARK</span></div></section><footer><div><span class="key">01</span> DRAW A PATH <span class="line"></span><span class="key">02</span> NAIL THE PARK <span class="line"></span><span class="key">03</span> GET THEM HOME</div><span>Made for a little organized chaos. <b>✳</b></span></footer></main><div class="rotate"><span>↻</span><h2>A little more room to maneuver.</h2><p>Turn your phone sideways to play ParkIt.</p></div>`;
+app.innerHTML = `<header><a class="brand" href="./"><span class="brand-icon">P<span>↗</span></span>park<span class="brand-light">it.</span></a><span class="tagline">A LITTLE LOT. A LOT GOING ON.</span><div class="header-right"><span class="live-dot"></span> OPEN FOR BUSINESS <button id="sound" aria-label="Toggle sound">♪</button></div></header><main><section class="title-row"><div><div class="eyebrow">THE EVERYDAY, SLIGHTLY MORE CHAOTIC</div><h1>Your lot. Your rules.<span> Mostly.</span></h1></div><button id="help" class="text-button">↗ How to play</button></section><section class="game-shell"><div class="toolbar"><div class="stats"><div><small>TODAY’S SCORE</small><strong id="score">0000</strong></div><div><small>PERSONAL BEST</small><strong id="best">0000</strong></div><div class="traffic"><small>TRAFFIC LEVEL</small><strong><span id="level">01</span><i>▂ ▄ ▆</i></strong></div></div><div class="tools"><span id="lives" aria-label="3 lives">♥ ♥ ♥</span><button id="fullscreen" aria-label="Enter fullscreen">⛶</button><button id="pause" aria-label="Pause game">Ⅱ</button><button id="restart" aria-label="Restart game">↻</button></div></div><div class="canvas-wrap"><canvas aria-label="Parking lot. Draw from a car to an empty space." width="1440" height="900"></canvas><div id="overlay"></div><div id="toast" role="status"></div><div class="lot-label">NORTHSIDE PLAZA <span>•</span> LOT 01</div></div><div class="game-footer"><span><b class="green-dot"></b> <span id="hint">Grab a car. Draw a route. Try not to meet the neighbors.</span></span><span class="weather">☀ 72° &nbsp; A GOOD DAY TO PARK</span></div></section><footer><div><span class="key">01</span> DRAW A PATH <span class="line"></span><span class="key">02</span> NAIL THE PARK <span class="line"></span><span class="key">03</span> GET THEM HOME</div><span>Made for a little organized chaos. <b>✳</b></span></footer></main><div class="rotate"><span>↻</span><h2>A little more room to maneuver.</h2><p>Turn your phone sideways to play ParkIt.</p></div>`;
 const canvas = document.querySelector("canvas")!,
   ctx = canvas.getContext("2d")!,
   overlay = document.querySelector<HTMLDivElement>("#overlay")!,
@@ -75,7 +75,61 @@ function show(title: string, body: string, button: string, action: () => void) {
   overlay.querySelector(".primary")!.addEventListener("click", action);
   overlay.querySelector(".skip")?.addEventListener("click", () => start(false));
 }
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element;
+  webkitExitFullscreen?: () => void;
+};
+type FullscreenRoot = HTMLElement & { webkitRequestFullscreen?: () => void };
+const fullscreenDoc = document as FullscreenDocument;
+const fullscreenRoot = document.documentElement as FullscreenRoot;
+function isFullscreen() {
+  return Boolean(
+    document.fullscreenElement || fullscreenDoc.webkitFullscreenElement,
+  );
+}
+function updateFullscreenButton() {
+  const active =
+    isFullscreen() || document.body.classList.contains("immersive");
+  document
+    .querySelector("#fullscreen")!
+    .setAttribute(
+      "aria-label",
+      active ? "Exit fullscreen" : "Enter fullscreen",
+    );
+}
+function enterFullscreen() {
+  document.body.classList.add("immersive");
+  updateFullscreenButton();
+  if (isFullscreen()) return;
+  try {
+    if (fullscreenRoot.requestFullscreen) {
+      void fullscreenRoot.requestFullscreen().catch(() => {
+        // Some mobile browsers allow only the viewport-filling layout.
+      });
+    } else {
+      fullscreenRoot.webkitRequestFullscreen?.();
+    }
+  } catch {
+    // Keep the viewport-filling layout when browser fullscreen is unavailable.
+  }
+}
+function fullscreenChanged() {
+  if (!isFullscreen()) document.body.classList.remove("immersive");
+  updateFullscreenButton();
+}
+document.addEventListener("fullscreenchange", fullscreenChanged);
+document.addEventListener("webkitfullscreenchange", fullscreenChanged);
+document.querySelector("#fullscreen")!.addEventListener("click", () => {
+  if (isFullscreen()) {
+    if (document.exitFullscreen) void document.exitFullscreen().catch(() => {});
+    else fullscreenDoc.webkitExitFullscreen?.();
+  } else if (document.body.classList.contains("immersive")) {
+    document.body.classList.remove("immersive");
+    updateFullscreenButton();
+  } else enterFullscreen();
+});
 function start(teach: boolean) {
+  enterFullscreen();
   game = new Game();
   started = true;
   tutorial = teach;

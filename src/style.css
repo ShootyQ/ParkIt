@@ -483,3 +483,86 @@ footer b {
     color: #7c8970;
   }
 }
+
+/* Keep the entire lot and its controls visible in fullscreen, without cropping. */
+body.immersive {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #293d33;
+}
+.immersive > #app {
+  width: 100%;
+}
+.immersive header,
+.immersive .title-row,
+.immersive footer {
+  display: none;
+}
+.immersive main {
+  width: min(100%, calc((100dvh - 96px) * 1.6));
+  max-width: none;
+  margin: auto;
+  padding: 0;
+}
+.immersive .game-shell {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.immersive .toolbar {
+  height: 64px;
+}
+.immersive .game-footer {
+  height: 32px;
+  padding: 9px 16px;
+}
+
+.immersive .tools > span {
+  white-space: nowrap;
+}
+@media (max-height: 600px) and (orientation: landscape) {
+  .immersive main {
+    width: min(100%, calc((100dvh - 70px) * 1.6));
+  }
+  .immersive .toolbar {
+    height: 44px;
+    padding: 0 12px;
+  }
+  .immersive .game-footer {
+    height: 26px;
+    padding: 7px 12px;
+  }
+  .immersive .stats {
+    gap: 10px;
+  }
+  .immersive .stats > div {
+    min-width: 56px;
+  }
+  .immersive .stats > div + div {
+    padding-left: 10px;
+  }
+  .immersive .stats small {
+    font-size: 6px;
+    letter-spacing: 1px;
+  }
+  .immersive .traffic i {
+    font-size: 12px;
+    margin-left: 5px;
+  }
+  .immersive .tools {
+    gap: 5px;
+  }
+  .immersive .tools > span {
+    font-size: 14px;
+    margin-right: 5px;
+    letter-spacing: 2px;
+  }
+  .immersive .tools button {
+    width: 26px;
+    height: 26px;
+    font-size: 16px;
+  }
+}

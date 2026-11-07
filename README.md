@@ -17,7 +17,7 @@ Press a waiting car and draw its complete route through the aisles into any empt
 
 Watch for flashing reverse lights. Draw backward out into the center aisle, then turn your line back toward the direction the car faces and continue to the bottom-right exit. The D marker shows where the car switches from reverse to forward. Routes are checked against curbs and stationary cars, but crossing moving traffic can crash.
 
-Parking earns 100 points; departures earn 150. Three lives, 30-second patience, and a three-car entrance queue. Every five departures increases arrival frequency. Space pauses; the buttons restart and mute. The page pauses when hidden. Rotate phones to landscape. Best score and preferences are saved locally when storage is available.
+Parking earns 100 points; departures earn 150. Three lives, 30-second patience, and a three-car entrance queue. Every five departures increases arrival frequency. Starting a shift requests fullscreen automatically. The fullscreen button lets you leave or re-enter it; browsers that do not support fullscreen still get a viewport-filling layout. Space pauses; the buttons restart and mute. The page pauses when hidden. Rotate phones to landscape. Best score and preferences are saved locally when storage is available.
 
 ## Validate
 

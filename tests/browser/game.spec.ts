@@ -169,3 +169,39 @@ test("tutorial completes a drawn parking and reverse departure cycle", async ({
     await page.evaluate(() => localStorage.getItem("parkit-tutorial")),
   ).toBe("done");
 });
+
+test("starting enters fullscreen and the control exits and re-enters", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Skip tutorial" }).click();
+  await expect
+    .poll(() => page.evaluate(() => Boolean(document.fullscreenElement)))
+    .toBe(true);
+  const box = (await page.locator("canvas").boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(1100);
+  await page.getByRole("button", { name: "Exit fullscreen" }).click();
+  await expect
+    .poll(() => page.evaluate(() => Boolean(document.fullscreenElement)))
+    .toBe(false);
+  await page.getByRole("button", { name: "Enter fullscreen" }).click();
+  await expect
+    .poll(() => page.evaluate(() => Boolean(document.fullscreenElement)))
+    .toBe(true);
+});
+
+test("fullscreen denial still starts a viewport-filling playable game", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Element.prototype.requestFullscreen = () =>
+      Promise.reject(new Error("Unavailable"));
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Skip tutorial" }).click();
+  await expect(page.locator("body")).toHaveClass("immersive");
+  await expect(page.locator("#overlay")).not.toBeVisible();
+  await page.getByRole("button", { name: "Exit fullscreen" }).click();
+  await expect(page.locator("body")).not.toHaveClass("immersive");
+});
