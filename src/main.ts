@@ -156,7 +156,7 @@ function start(teach: boolean) {
   sync();
   if (teach)
     notify(
-      "01 / Draw from the car, up the left aisle, then into any space. Finish facing in.",
+      "01 / Draw from the car into any empty space. The car will line itself up.",
     );
   sound();
 }
@@ -209,7 +209,7 @@ document.querySelector("#help")!.addEventListener("click", () => {
   game.paused = true;
   show(
     "A little parking practice.",
-    "Draw the entire route into a space. Wide turns work best. When reverse lights blink, draw backward into the center aisle, then forward to the exit. Crossing traffic is your responsibility.",
+    "Draw from a car into any empty space. The car handles the final turn; a direct drag gets a safe route through the aisle. When reverse lights blink, draw backward into the center aisle, then forward to the exit. Crossing traffic is your responsibility.",
     "Try the tutorial",
     () => start(true),
   );
@@ -267,6 +267,10 @@ canvas.addEventListener("pointerup", (e) => {
       tutorialStep = 1;
       notify(
         "Nice! Watch the car park. Reverse lights will tell you when it’s ready to leave.",
+      );
+    } else {
+      notify(
+        `On my way! Space ${String((selected.spot ?? 0) + 1).padStart(2, "0")}.`,
       );
     }
   }

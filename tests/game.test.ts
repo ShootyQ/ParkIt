@@ -3,6 +3,7 @@ import {
   Game,
   CAR_L,
   CAR_W,
+  obstacles,
   setProjectionAspect,
   parkingSpot,
   corners,
@@ -68,20 +69,27 @@ describe("parking geometry", () => {
         .error,
     ).toContain("reserved");
   });
-  it("rejects a curb crossing and incomplete route", () => {
+  it("routes around a curb crossing but rejects incomplete input", () => {
     const g = new Game();
     g.spawn();
-    expect(
-      validate(
-        g.cars[0],
-        [
-          { x: 150, y: 614 },
-          { x: 150, y: 100 },
-          { x: 345, y: 300 },
-        ],
-        g.cars,
-      ).error,
-    ).toBeTruthy();
+    const result = validate(
+      g.cars[0],
+      [
+        { x: 150, y: 614 },
+        { x: 150, y: 100 },
+        { x: 345, y: 300 },
+      ],
+      g.cars,
+    );
+    expect(result.error).toBeUndefined();
+    for (let i = 1; i < result.path.length; i++) {
+      const p = result.path[i],
+        before = result.path[i - 1],
+        angle = Math.atan2(p.y - before.y, p.x - before.x);
+      expect(
+        obstacles.some((o) => overlap(corners(p, angle), rectPoints(o))),
+      ).toBe(false);
+    }
     expect(validate(g.cars[0], [], g.cars).error).toBeTruthy();
   });
 });
@@ -244,4 +252,89 @@ it("accepts densely sampled touch corners as well as sparse mouse strokes", () =
   g.tutorial = true;
   for (let i = 0; i < 900; i++) g.update(1 / 60);
   expect(g.score).toBe(100);
+});
+
+it("parks from a direct drag into every space regardless of approach direction", () => {
+  for (const ratio of [0.85, 1, 1.6, 2.5]) {
+    setProjectionAspect(ratio);
+    try {
+      for (let spot = 0; spot < 16; spot++) {
+        const g = new Game();
+        g.tutorial = true;
+        g.spawn();
+        const c = g.cars[0];
+        const target = { x: 345 + (spot % 8) * 100, y: spot < 8 ? 298 : 588 };
+        expect(
+          g.commit(c, [{ x: c.x, y: c.y }, target]),
+          `space ${spot + 1}, ratio ${ratio}`,
+        ).toBeUndefined();
+        expect(c.spot).toBe(spot);
+        for (let i = 0; i < 1200; i++) g.update(1 / 60);
+        expect(g.score, `space ${spot + 1}, ratio ${ratio}`).toBe(100);
+      }
+    } finally {
+      setProjectionAspect(1);
+    }
+  }
+});
+it("a sideways finish inside a space selects that space and aligns the car", () => {
+  const g = new Game();
+  g.spawn();
+  expect(
+    g.commit(g.cars[0], [
+      { x: 150, y: 614 },
+      { x: 150, y: 443 },
+      { x: 320, y: 300 },
+      { x: 365, y: 300 },
+    ]),
+  ).toBeUndefined();
+  expect(g.cars[0].spot).toBe(0);
+});
+it("still rejects a reserved destination for a direct drag", () => {
+  const g = new Game();
+  g.spawn();
+  g.commit(g.cars[0], [
+    { x: 150, y: 614 },
+    { x: 345, y: 300 },
+  ]);
+  g.spawn();
+  expect(
+    g.commit(g.cars[1], [
+      { x: 150, y: 692 },
+      { x: 345, y: 300 },
+    ]),
+  ).toContain("reserved");
+});
+
+it("can reach any remaining space with the other fifteen spaces occupied", () => {
+  for (const ratio of [0.85, 2.5]) {
+    setProjectionAspect(ratio);
+    try {
+      for (let target = 0; target < 16; target++) {
+        const g = new Game();
+        g.spawn();
+        const c = g.cars[0];
+        for (let i = 0; i < 16; i++)
+          if (i !== target)
+            g.cars.push({
+              ...c,
+              id: 100 + i,
+              x: 345 + (i % 8) * 100,
+              y: i < 8 ? 298 : 588,
+              angle: i < 8 ? -Math.PI / 2 : Math.PI / 2,
+              state: "parked",
+              spot: i,
+            });
+        expect(
+          g.commit(c, [
+            { x: c.x, y: c.y },
+            { x: 345 + (target % 8) * 100, y: target < 8 ? 298 : 588 },
+          ]),
+          `space ${target + 1}, ratio ${ratio}`,
+        ).toBeUndefined();
+      }
+    } finally {
+      setProjectionAspect(1);
+    }
+  }
 });

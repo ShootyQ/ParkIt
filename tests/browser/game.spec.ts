@@ -100,7 +100,7 @@ test("touch drawing reaches route validation in landscape", async ({
     type: "touchEnd",
     touchPoints: [],
   });
-  await expect(page.getByRole("status")).toContainText("Finish inside a space");
+  await expect(page.getByRole("status")).toContainText("empty parking space");
   await context.close();
 });
 
@@ -282,5 +282,45 @@ test("a finger-drawn route just inside a bay starts the car and parks on a wide 
   }
   await touch("touchEnd");
   await expect(page.locator("#score")).toHaveText("0100", { timeout: 12000 });
+  await context.close();
+});
+
+test("a direct diagonal finger drag parks without tracing aisles or facing inward", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 570 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    Element.prototype.requestFullscreen = () =>
+      Promise.reject(new Error("Embedded browser"));
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Skip tutorial" }).tap();
+  const box = (await page.locator("canvas").boundingBox())!,
+    session = await context.newCDPSession(page);
+  const touch = async (type: string, x?: number, y?: number) =>
+    session.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints:
+        x === undefined
+          ? []
+          : [
+              {
+                x: box.x + (x / 1440) * box.width,
+                y: box.y + (y! / 900) * box.height,
+              },
+            ],
+    });
+  await touch("touchStart", 150, 614);
+  for (let i = 1; i <= 20; i++)
+    await touch("touchMove", 150 + (195 * i) / 20, 614 - (314 * i) / 20);
+  await touch("touchEnd");
+  await expect(page.getByRole("status")).toContainText("On my way! Space 01");
+  await expect(page.locator("#score")).toHaveText("0100", { timeout: 12000 });
+  await page.screenshot({ path: "/tmp/parkit-direct-drag-parked.png" });
   await context.close();
 });

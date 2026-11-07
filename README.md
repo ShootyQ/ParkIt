@@ -13,7 +13,7 @@ npm run dev
 
 ## Play
 
-Press a waiting car and draw its complete route through the aisles into any empty space. End the line inside the markings, facing inward. The endpoint is fitted within that space so the whole car can park; tiny finger-release wiggles and redundant touch samples are filtered out. The ghost car previews the final pose; a yellow path needs correcting. Wide turns are easier than sharp corners. Release to send the car; press Escape to discard an unfinished route.
+Press a waiting car and drag into any empty space, then release. The car handles its final alignment. Draw a full route through the aisles if you want to control its path, or make a simple direct drag and the car takes a safe aisle approach. You do not need to finish facing a particular direction. The green preview shows the actual route and final pose; occupied spaces stay unavailable. Moving traffic can still collide. Press Escape to discard an unfinished route.
 
 Watch for flashing reverse lights. Draw backward out into the center aisle, then turn your line back toward the direction the car faces and continue to the bottom-right exit. The D marker shows where the car switches from reverse to forward. Routes are checked against curbs and stationary cars, but crossing moving traffic can crash.
 

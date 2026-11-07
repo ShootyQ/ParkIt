@@ -196,13 +196,14 @@ function parkingInput(raw: Point[]): Point[] {
   while (last > 0 && distance(raw[last], end) < 12) last--;
   return [...raw.slice(0, last + 1), fitted];
 }
-export function validate(
+function validateExact(
   car: Car,
   raw: Point[],
   cars: Car[],
+  assisted = false,
 ): { error?: string; path: Point[]; spot?: number; gear: number } {
   const depart = car.state === "requesting-departure";
-  if (!depart) raw = parkingInput(simplify(raw));
+  if (!depart && !assisted) raw = parkingInput(simplify(raw));
   let path = smooth(raw),
     gear = -1;
   if (depart) {
@@ -234,7 +235,7 @@ export function validate(
     heading = Math.atan2(end.y - prev.y, end.x - prev.x),
     spot = depart ? undefined : parkingSpot(end, heading);
   if (!depart && !spot)
-    return { error: "Finish inside a space, facing into it.", path, gear };
+    return { error: "Parking approach needs alignment.", path, gear };
   if (spot && cars.some((c) => c.id !== car.id && c.spot === spot.id))
     return { error: "That space is already reserved.", path, gear };
   let previous = car.angle;
@@ -246,6 +247,7 @@ export function validate(
     let angle = Math.atan2(b.y - a.y, b.x - a.x);
     if (depart && i <= gear) angle += Math.PI;
     if (
+      !assisted &&
       !(depart && Math.abs(i - gear) <= 3) &&
       Math.abs(angleDiff(angle, previous)) > Math.max(0.16, d / 18 + 0.06)
     )
@@ -268,6 +270,71 @@ export function validate(
       return { error: "There’s a parked car in the way.", path, gear };
   }
   return { path, spot: spot?.id, gear };
+}
+/** A safe aisle approach for simple drags; final alignment is handled by the car. */
+function aisleRoute(car: Car, spot: Spot): Point[] {
+  const x = spot.x + spot.w / 2;
+  const top = spot.id < 8;
+  const route: Point[] = [
+    { x: car.x, y: car.y },
+    { x: 150, y: 503 },
+  ];
+  const arc = (cx: number, cy: number, from: number, to: number) => {
+    for (let i = 1; i <= 18; i++) {
+      const a = from + ((to - from) * i) / 18;
+      route.push({ x: cx + 60 * Math.cos(a), y: cy + 60 * Math.sin(a) });
+    }
+  };
+  arc(210, 503, Math.PI, Math.PI * 1.5);
+  route.push({ x: x - 60, y: 443 });
+  if (top) arc(x - 60, 383, Math.PI / 2, 0);
+  else arc(x - 60, 503, -Math.PI / 2, 0);
+  route.push({ x, y: spot.y + spot.h / 2 });
+  return route;
+}
+export function validate(
+  car: Car,
+  raw: Point[],
+  cars: Car[],
+): { error?: string; path: Point[]; spot?: number; gear: number } {
+  if (car.state === "requesting-departure")
+    return validateExact(car, raw, cars);
+  if (raw.length < 2 || distance(raw[0], raw[raw.length - 1]) < 15)
+    return {
+      error: "Draw a complete route into an empty parking space.",
+      path: raw,
+      gear: -1,
+    };
+  const end = raw[raw.length - 1];
+  const destination = spots.find(
+    (s) =>
+      end.x >= s.x - 5 &&
+      end.x <= s.x + s.w + 5 &&
+      end.y >= s.y - 5 &&
+      end.y <= s.y + s.h + 5,
+  );
+  if (!destination)
+    return {
+      error: "Finish your line inside an empty parking space.",
+      path: smooth(raw),
+      gear: -1,
+    };
+  if (cars.some((c) => c.id !== car.id && c.spot === destination.id))
+    return {
+      error: "That space is already reserved.",
+      path: smooth(raw),
+      gear: -1,
+    };
+  const drawn = validateExact(car, raw, cars);
+  if (!drawn.error) return drawn;
+  // A direct drag or sideways release selects the space; never reject it for final heading.
+  const assisted = validateExact(car, aisleRoute(car, destination), cars, true);
+  if (assisted.error)
+    return {
+      ...assisted,
+      error: "The aisle is blocked. Try another open space.",
+    };
+  return assisted;
 }
 export class Game {
   cars: Car[] = [];
