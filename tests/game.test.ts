@@ -1,4 +1,4 @@
-import { afterEach, describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   Game,
   CAR_L,
@@ -13,12 +13,21 @@ import {
   validate,
   type Point,
 } from "../src/game";
-afterEach(() => setProjectionAspect(1));
+afterEach(() => {
+  setProjectionAspect(1);
+  vi.restoreAllMocks();
+});
 function setup() {
   const game = new Game();
   game.tutorial = true;
   game.spawn();
-  return { game, car: game.cars[0] };
+  const car = game.cars[0];
+  car.x = 150;
+  car.y = 614;
+  car.state = "waiting";
+  car.route = [];
+  car.undirected = false;
+  return { game, car };
 }
 const parking: Point[] = [
   { x: 150, y: 614 },
@@ -144,7 +153,9 @@ describe("parking as an outcome", () => {
   it("requests departure and follows drawn reverse and drive segments to exit", () => {
     const { game, car } = setup();
     game.commit(car, parking);
-    game.update(10);
+    game.update(6);
+    car.wait = 0.1;
+    game.update(0.2);
     expect(car.state).toBe("requesting-departure");
     expect(
       game.commit(car, [
@@ -245,4 +256,100 @@ it("lets a departing car follow a line off the exit edge", () => {
   expect(game.cars).toHaveLength(0);
   expect(game.exits).toBe(1);
   expect(game.lives).toBe(3);
+});
+
+describe("constant traffic and parking stays", () => {
+  it("spawns cars already driving straight from three different gates", () => {
+    const game = new Game();
+    game.tutorial = true;
+    game.spawn();
+    game.spawn();
+    game.spawn();
+    expect(game.cars.map((c) => c.entry)).toEqual(["bottom", "left", "right"]);
+    const starts = game.cars.map((c) => ({ x: c.x, y: c.y }));
+    game.update(1);
+    expect(game.cars[0].y).toBeCloseTo(starts[0].y - 70);
+    expect(game.cars[1].x).toBeCloseTo(starts[1].x + 70);
+    expect(game.cars[2].x).toBeCloseTo(starts[2].x - 70);
+    expect(
+      game.cars.every((c) => c.undirected && c.state === "driving-in"),
+    ).toBe(true);
+  });
+  it("keeps feeding different sides without waiting for player actions", () => {
+    const game = new Game();
+    game.update(10.2);
+    expect(game.cars.map((c) => c.entry)).toEqual(["bottom", "left", "right"]);
+    expect(game.lives).toBe(3);
+    expect(game.arrivalInterval).toBe(3);
+    game.exits = 10;
+    expect(game.arrivalInterval).toBeLessThan(3);
+  });
+  it("holds only the selected car while a line is being drawn", () => {
+    const game = new Game();
+    game.tutorial = true;
+    game.spawn();
+    game.spawn();
+    const first = game.cars[0],
+      second = game.cars[1];
+    game.heldCar = first.id;
+    game.update(1);
+    expect(first.y).toBe(820);
+    expect(second.x).toBeCloseTo(160);
+    game.commit(first, [first, { x: 150, y: 700 }]);
+    game.heldCar = undefined;
+    game.update(0.5);
+    expect(first.undirected).toBe(false);
+    expect(first.y).toBeCloseTo(775);
+  });
+  it("skips an occupied gate instead of overlapping a new arrival", () => {
+    const game = new Game();
+    game.tutorial = true;
+    game.spawn();
+    game.spawn();
+    game.spawn();
+    expect(game.spawn()).toBe(false);
+    expect(game.cars).toHaveLength(3);
+  });
+  it.each([0, 0.999])(
+    "parks for 10–30 seconds, then explicitly requests removal (%s)",
+    (random) => {
+      vi.spyOn(Math, "random").mockReturnValue(random);
+      const { game, car } = setup();
+      game.commit(car, parking);
+      game.update(5.7);
+      expect(car.state).toBe("parked");
+      expect(car.wait).toBeGreaterThan(9.9);
+      expect(car.wait).toBeLessThanOrEqual(30);
+      const remaining = car.wait;
+      game.update(remaining - 0.1);
+      expect(car.state).toBe("parked");
+      game.update(0.2);
+      expect(car.state).toBe("requesting-departure");
+      expect(game.cars).toContain(car);
+    },
+  );
+  it("counts an unhandled arrival as a miss instead of silently parking it", () => {
+    const game = new Game();
+    game.tutorial = true;
+    game.spawn();
+    const car = game.cars[0];
+    game.update(9);
+    expect(game.cars).not.toContain(car);
+    expect(game.lives).toBe(2);
+    expect(game.score).toBe(0);
+  });
+  it.each([
+    { x: 200, y: 418, end: { x: 50, y: 418 } },
+    { x: 1250, y: 478, end: { x: 1390, y: 478 } },
+  ])("lets parked drivers depart through either side gate", ({ x, y, end }) => {
+    const { game, car } = setup();
+    car.x = x;
+    car.y = y;
+    car.credited = true;
+    car.angle = end.x < x ? Math.PI : 0;
+    game.commit(car, [car, end]);
+    game.update(3);
+    expect(game.exits).toBe(1);
+    expect(game.lives).toBe(3);
+  });
 });

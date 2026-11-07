@@ -17,7 +17,7 @@ Press a car and draw exactly where it should go. Release to drive. Lines are nev
 
 Spaces are sized to the car, with a little clearance. Parking scores 100 only when the actual stopped car fits inside a space, in either direction. Miss the space? The car stops where you drew: draw another line to adjust it. You can also move parked cars. Each car earns its parking points once, then earns 150 when you guide it to the exit. Watch the reverse lights for drivers who want to leave.
 
-Three lives, 30-second patience, and a three-car entrance queue. Every five departures increases arrival frequency. Starting a shift requests fullscreen; the button exits or re-enters it. Embedded browsers still get full-width play. Space pauses; Escape discards an unfinished drawing. The page pauses when hidden. Best score and mute preference are saved locally when storage is available.
+Cars drive straight in from the bottom, left, and right gates about every three seconds. Grab any moving car to draw its route; that car holds briefly while you draw and the rest keep moving. Arrivals you ignore eventually leave or reach the end of their approach and cost a life. Parking lasts a random 10–30 seconds; then reverse lights and an OUT indicator ask you to guide the car away through either side gate or the bottom-right exit. Three lives and 30-second departure patience. Every five departures increases arrival frequency. Starting a shift requests fullscreen; the button exits or re-enters it. Embedded browsers still get full-width play. Space pauses; Escape discards an unfinished drawing. The page pauses when hidden. Best score and mute preference are saved locally when storage is available.
 
 ## Validate
 

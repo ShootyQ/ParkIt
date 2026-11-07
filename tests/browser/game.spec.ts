@@ -7,10 +7,47 @@ const parking = [
 ];
 async function start(page: Page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Skip tutorial" }).click();
+  await page.getByRole("button", { name: "Let’s park" }).click();
+  await expect
+    .poll(async () => {
+      try {
+        await firstCar(page);
+        return true;
+      } catch {
+        return false;
+      }
+    })
+    .toBe(true);
+}
+async function firstCar(page: Page) {
+  return page.evaluate(() => {
+    const canvas = document.querySelector("canvas")!,
+      pixels = canvas.getContext("2d")!.getImageData(0, 0, 1440, 900).data;
+    let minX = 1440,
+      maxX = 0,
+      minY = 900,
+      maxY = 0;
+    for (let y = 190; y < 875; y++)
+      for (let x = 25; x < 1415; x++) {
+        const i = (y * 1440 + x) * 4;
+        if (
+          pixels[i] === 223 &&
+          pixels[i + 1] === 115 &&
+          pixels[i + 2] === 93
+        ) {
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y);
+          maxY = Math.max(maxY, y);
+        }
+      }
+    if (maxY === 0) throw new Error("First car not rendered");
+    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+  });
 }
 async function draw(page: Page, points: { x: number; y: number }[]) {
   const box = (await page.locator("canvas").boundingBox())!;
+  points = [await firstCar(page), ...points.slice(1)];
   await page.mouse.move(
     box.x + (points[0].x / 1440) * box.width,
     box.y + (points[0].y / 900) * box.height,
@@ -150,11 +187,12 @@ test("phone touch follows a straight backward line without requiring a destinati
               },
             ],
     });
-  await touch("touchStart", 614);
-  for (let y = 620; y <= 704; y += 7) await touch("touchMove", y);
-  await touch("touchMove", 704);
+  const car = await firstCar(page);
+  await touch("touchStart", car.y);
+  for (let y = car.y + 3; y < 835; y += 3) await touch("touchMove", y);
+  await touch("touchMove", 835);
   await touch("touchEnd");
-  await expectCarAt(page, 150, 704);
+  await expectCarAt(page, 150, 835);
   await expect(page.locator("#score")).toHaveText("0000");
   await page.screenshot({ path: "/tmp/parkit-phone-literal.png" });
   await context.close();
@@ -163,4 +201,34 @@ test("portrait phones show rotation guidance", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(page.getByText("Turn your phone sideways")).toBeVisible();
+});
+
+test("normal play continuously introduces moving cars from different sides", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Skip tutorial" }).click();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const data = document
+            .querySelector("canvas")!
+            .getContext("2d")!
+            .getImageData(0, 0, 1440, 900).data;
+          const colors = new Set<string>();
+          for (let i = 0; i < data.length; i += 4) {
+            if (data[i] === 223 && data[i + 1] === 115 && data[i + 2] === 93)
+              colors.add("bottom");
+            if (data[i] === 178 && data[i + 1] === 165 && data[i + 2] === 207)
+              colors.add("left");
+            if (data[i] === 213 && data[i + 1] === 222 && data[i + 2] === 208)
+              colors.add("right");
+          }
+          return colors.size;
+        }),
+      { timeout: 12000 },
+    )
+    .toBe(3);
+  await page.screenshot({ path: "/tmp/parkit-incoming-traffic.png" });
 });

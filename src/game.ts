@@ -23,6 +23,8 @@ export type Car = Point & {
   pause: number;
   reverse?: boolean[];
   credited?: boolean;
+  undirected?: boolean;
+  entry?: "bottom" | "left" | "right";
 };
 export const CAR_SCALE = 1.15;
 export const W = 1440,
@@ -152,6 +154,23 @@ export function validate(
 }
 const moving = (c: Car) =>
   ["driving-in", "driving-out", "reversing"].includes(c.state);
+export const entries = [
+  {
+    side: "bottom" as const,
+    x: 150,
+    y: 820,
+    angle: -Math.PI / 2,
+    end: { x: 150, y: 235 },
+  },
+  { side: "left" as const, x: 90, y: 418, angle: 0, end: { x: 1380, y: 418 } },
+  {
+    side: "right" as const,
+    x: 1350,
+    y: 478,
+    angle: Math.PI,
+    end: { x: 60, y: 478 },
+  },
+];
 export class Game {
   cars: Car[] = [];
   score = 0;
@@ -167,35 +186,53 @@ export class Game {
   get level() {
     return 1 + Math.floor(this.exits / 5);
   }
+  heldCar?: number;
+  private nextEntry = 0;
+  get arrivalInterval() {
+    return Math.max(1.6, 3 - Math.floor(this.exits / 5) * 0.15);
+  }
   spawn() {
-    const waiting = this.cars.filter(
-      (c) => c.state === "waiting" && !c.credited,
-    );
-    if (waiting.length >= 3) {
-      this.mistake("Entrance backed up!");
-      return;
+    if (
+      this.cars.filter((c) => !c.credited && c.state !== "crashed").length >= 12
+    ) {
+      this.mistake("Too much incoming traffic!");
+      return false;
     }
-    const n =
-      [0, 1, 2].find(
-        (i) =>
-          !this.cars.some((c) => distance(c, { x: 150, y: 614 + i * 78 }) < 70),
-      ) ?? 0;
-    this.cars.push({
-      id: this.nextId++,
-      x: 150,
-      y: 614 + n * 78,
-      angle: -Math.PI / 2,
-      color: ["#e7ab53", "#9cbfbd", "#df735d", "#b2a5cf", "#d5ded0"][
-        this.nextId % 5
-      ],
-      state: "waiting",
-      route: [],
-      index: 1,
-      timer: 30,
-      wait: 0,
-      gear: -1,
-      pause: 0,
-    });
+    for (let i = 0; i < entries.length; i++) {
+      const index = (this.nextEntry + i) % entries.length,
+        gate = entries[index];
+      const box = corners(gate, gate.angle, 12);
+      if (
+        this.cars.some(
+          (c) => c.state !== "crashed" && overlap(box, corners(c, c.angle)),
+        )
+      )
+        continue;
+      const car: Car = {
+        id: this.nextId++,
+        x: gate.x,
+        y: gate.y,
+        angle: gate.angle,
+        color: ["#e7ab53", "#9cbfbd", "#df735d", "#b2a5cf", "#d5ded0"][
+          this.nextId % 5
+        ],
+        state: "driving-in",
+        route: smooth([gate, gate.end]),
+        index: 1,
+        timer: 30,
+        wait: 0,
+        gear: -1,
+        pause: 0,
+        undirected: true,
+        entry: gate.side,
+      };
+      car.reverse = car.route.map(() => false);
+      this.cars.push(car);
+      this.nextEntry = (index + 1) % entries.length;
+      return true;
+    }
+    this.events.push("Entrances blocked — clear some space!");
+    return false;
   }
   mistake(message: string) {
     this.lives = Math.max(0, this.lives - 1);
@@ -206,6 +243,7 @@ export class Game {
     if (car.state === "crashed") return "That car is out of action.";
     const plan = validate(car, raw, this.cars);
     if (plan.error) return plan.error;
+    car.undirected = false;
     car.route = plan.path;
     car.reverse = plan.reverse;
     car.index = 1;
@@ -227,7 +265,18 @@ export class Game {
     );
   }
   private finish(c: Car) {
-    if (c.x >= 1270 && c.y >= 730) {
+    if (c.undirected) {
+      this.mistake(
+        "Missed an arrival! Draw its route before it crosses the lot.",
+      );
+      this.remove(c);
+      return;
+    }
+    if (
+      (c.x >= 1270 && c.y >= 730) ||
+      (c.x <= 75 && c.y >= 390 && c.y <= 505) ||
+      (c.x >= 1365 && c.y >= 390 && c.y <= 505)
+    ) {
       if (c.credited) {
         this.score += 150;
         this.exits++;
@@ -243,7 +292,7 @@ export class Game {
     ) {
       c.spot = spot.id;
       c.state = "parked";
-      c.wait = this.tutorial ? 3 : 15 + Math.random() * 10;
+      c.wait = 10 + Math.random() * 20;
       if (!c.credited) {
         c.credited = true;
         this.score += 100;
@@ -269,12 +318,13 @@ export class Game {
     if (!this.tutorial) {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0) {
-        this.spawn();
-        this.spawnTimer = Math.max(3, 8 - Math.floor(this.exits / 5) * 0.5);
+        const spawned = this.spawn();
+        this.spawnTimer = spawned ? this.arrivalInterval : 1.5;
       }
     }
     const moved = new Set<number>();
     for (const c of [...this.cars]) {
+      if (c.id === this.heldCar) continue;
       if (c.state === "waiting" || c.state === "requesting-departure") {
         if (!this.tutorial) c.timer -= dt;
         if (c.timer <= 0) {
@@ -315,12 +365,17 @@ export class Game {
             : "driving-in";
         c.angle =
           Math.atan2(target.y - c.y, target.x - c.x) + (back ? Math.PI : 0);
-        const speed = back ? 55 : 90,
+        const speed = back ? 55 : c.undirected ? 70 : 90,
           travel = Math.min(d, speed * time);
         c.x += ((target.x - c.x) / d) * travel;
         c.y += ((target.y - c.y) / d) * travel;
         time -= travel / speed;
-        if (c.x >= 1370 && c.y >= 730 && target.x - c.x >= -1e-8) {
+        const dx = target.x - c.x;
+        if (
+          (c.x >= 1370 && c.y >= 730 && dx >= -1e-8) ||
+          (c.x <= 75 && c.y >= 390 && c.y <= 505 && dx < 0) ||
+          (c.x >= 1365 && c.y >= 390 && c.y <= 505 && dx > 0)
+        ) {
           this.finish(c);
           break;
         }

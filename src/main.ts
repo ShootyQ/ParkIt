@@ -15,7 +15,7 @@ import {
   type Point,
 } from "./game";
 const app = document.querySelector<HTMLDivElement>("#app")!;
-app.innerHTML = `<header><a class="brand" href="./"><span class="brand-icon">P<span>↗</span></span>park<span class="brand-light">it.</span></a><span class="tagline">A LITTLE LOT. A LOT GOING ON.</span><div class="header-right"><span class="live-dot"></span> OPEN FOR BUSINESS <button id="sound" aria-label="Toggle sound">♪</button></div></header><main><section class="title-row"><div><div class="eyebrow">THE EVERYDAY, SLIGHTLY MORE CHAOTIC</div><h1>Your lot. Your rules.<span> Mostly.</span></h1></div><button id="help" class="text-button">↗ How to play</button></section><section class="game-shell"><div class="toolbar"><div class="stats"><div><small>TODAY’S SCORE</small><strong id="score">0000</strong></div><div><small>PERSONAL BEST</small><strong id="best">0000</strong></div><div class="traffic"><small>TRAFFIC LEVEL</small><strong><span id="level">01</span><i>▂ ▄ ▆</i></strong></div></div><div class="tools"><span id="lives" aria-label="3 lives">♥ ♥ ♥</span><button id="fullscreen" aria-label="Enter fullscreen">⛶</button><button id="pause" aria-label="Pause game">Ⅱ</button><button id="restart" aria-label="Restart game">↻</button></div></div><div class="canvas-wrap"><canvas aria-label="Parking lot. Draw from a car to an empty space." width="1440" height="900"></canvas><div id="overlay"></div><div id="toast" role="status"></div><div class="lot-label">NORTHSIDE PLAZA <span>•</span> LOT 01</div></div><div class="game-footer"><span><b class="green-dot"></b> <span id="hint">Grab a car. Draw a route. Try not to meet the neighbors.</span></span><span class="weather">☀ 72° &nbsp; A GOOD DAY TO PARK</span></div></section><footer><div><span class="key">01</span> DRAW A PATH <span class="line"></span><span class="key">02</span> NAIL THE PARK <span class="line"></span><span class="key">03</span> GET THEM HOME</div><span>Made for a little organized chaos. <b>✳</b></span></footer></main><div class="rotate"><span>↻</span><h2>A little more room to maneuver.</h2><p>Turn your phone sideways to play ParkIt.</p></div>`;
+app.innerHTML = `<header><a class="brand" href="./"><span class="brand-icon">P<span>↗</span></span>park<span class="brand-light">it.</span></a><span class="tagline">A LITTLE LOT. A LOT GOING ON.</span><div class="header-right"><span class="live-dot"></span> OPEN FOR BUSINESS <button id="sound" aria-label="Toggle sound">♪</button></div></header><main><section class="title-row"><div><div class="eyebrow">THE EVERYDAY, SLIGHTLY MORE CHAOTIC</div><h1>Your lot. Your rules.<span> Mostly.</span></h1></div><button id="help" class="text-button">↗ How to play</button></section><section class="game-shell"><div class="toolbar"><div class="stats"><div><small>TODAY’S SCORE</small><strong id="score">0000</strong></div><div><small>PERSONAL BEST</small><strong id="best">0000</strong></div><div class="traffic"><small>TRAFFIC LEVEL</small><strong><span id="level">01</span><i>▂ ▄ ▆</i></strong></div></div><div class="tools"><span id="lives" aria-label="3 lives">♥ ♥ ♥</span><button id="fullscreen" aria-label="Enter fullscreen">⛶</button><button id="pause" aria-label="Pause game">Ⅱ</button><button id="restart" aria-label="Restart game">↻</button></div></div><div class="canvas-wrap"><canvas aria-label="Parking lot. Draw from a car to an empty space." width="1440" height="900"></canvas><div id="overlay"></div><div id="toast" role="status"></div><div class="lot-label">NORTHSIDE PLAZA <span>•</span> LOT 01</div></div><div class="game-footer"><span><b class="green-dot"></b> <span id="hint">Cars keep coming. Draw from a moving car to steer it.</span></span><span class="weather">☀ 72° &nbsp; A GOOD DAY TO PARK</span></div></section><footer><div><span class="key">01</span> DRAW A PATH <span class="line"></span><span class="key">02</span> NAIL THE PARK <span class="line"></span><span class="key">03</span> GET THEM HOME</div><span>Made for a little organized chaos. <b>✳</b></span></footer></main><div class="rotate"><span>↻</span><h2>A little more room to maneuver.</h2><p>Turn your phone sideways to play ParkIt.</p></div>`;
 const canvas = document.querySelector("canvas")!,
   ctx = canvas.getContext("2d")!,
   overlay = document.querySelector<HTMLDivElement>("#overlay")!,
@@ -149,7 +149,7 @@ function start(teach: boolean) {
   tutorialStep = 0;
   game.tutorial = teach;
   game.spawn();
-  game.spawnTimer = 8;
+  game.spawnTimer = game.arrivalInterval;
   toast.classList.remove("show");
   toastUntil = 0;
   overlay.classList.remove("visible");
@@ -158,7 +158,7 @@ function start(teach: boolean) {
   sync();
   if (teach)
     notify(
-      "01 / Draw the car’s path. It follows your line exactly — forward or backward.",
+      "01 / Grab the moving car and draw its path. Cars enter from three sides.",
     );
   sound();
 }
@@ -183,6 +183,11 @@ function sync() {
 function pause() {
   if (!started || game.over) return;
   game.paused = !game.paused;
+  if (game.paused) {
+    game.heldCar = undefined;
+    selected = undefined;
+    draw = [];
+  }
   if (game.paused)
     show(
       "Take a breather.",
@@ -211,7 +216,7 @@ document.querySelector("#help")!.addEventListener("click", () => {
   game.paused = true;
   show(
     "A little parking practice.",
-    "Draw the exact path you want. Start behind the car to reverse. Lines are never corrected: dodge cars and curbs, then stop inside a space. If you miss, draw another line. When reverse lights blink, draw backward into the center aisle, then forward to the exit. Crossing traffic is your responsibility.",
+    "Draw the exact path you want. Start behind the car to reverse. Lines are never corrected: dodge cars and curbs, then stop inside a space. If you miss, draw another line. Parked cars wait 10–30 seconds, then blink their reverse lights. Draw them out to an exit. Crossing traffic is your responsibility.",
     "Try the tutorial",
     () => start(true),
   );
@@ -226,6 +231,7 @@ document.addEventListener("keydown", (e) => {
     pause();
   }
   if (e.key === "Escape") {
+    game.heldCar = undefined;
     draw = [];
     selected = undefined;
   }
@@ -241,11 +247,10 @@ canvas.addEventListener("pointerdown", (e) => {
   if (!started || game.paused || game.over) return;
   const p = point(e);
   selected = game.cars.find(
-    (c) =>
-      ["waiting", "parked", "requesting-departure"].includes(c.state) &&
-      distance(c, p) < 44,
+    (c) => c.state !== "crashed" && distance(c, p) < 44,
   );
   if (selected) {
+    game.heldCar = selected.id;
     strokeStart = { x: e.clientX, y: e.clientY };
     strokeMoved = false;
     draw = [{ x: selected.x, y: selected.y }];
@@ -264,6 +269,7 @@ canvas.addEventListener("pointermove", (e) => {
   if (selected && distance(draw[draw.length - 1], hover) > 2) draw.push(hover);
 });
 canvas.addEventListener("pointerup", (e) => {
+  game.heldCar = undefined;
   if (!selected) return;
   if (
     !strokeMoved &&
@@ -296,8 +302,16 @@ canvas.addEventListener("pointerup", (e) => {
   selected = undefined;
 });
 canvas.addEventListener("pointercancel", () => {
+  game.heldCar = undefined;
   draw = [];
   selected = undefined;
+});
+canvas.addEventListener("lostpointercapture", () => {
+  if (selected) {
+    game.heldCar = undefined;
+    selected = undefined;
+    draw = [];
+  }
 });
 function rr(
   x: number,
@@ -417,7 +431,10 @@ function car(c: Car, ghost = false) {
   ctx.fillRect(-20, 16, 12, 4);
   ctx.fillRect(13, 16, 12, 4);
   ctx.restore();
-  if (["waiting", "parked", "requesting-departure"].includes(c.state)) {
+  if (c.state === "parked") {
+    text(`${Math.ceil(c.wait)}s`, c.x - 12, c.y - 51, 16, "#d6e7b6");
+  }
+  if (["waiting", "requesting-departure"].includes(c.state)) {
     const y = c.y - 52;
     rr(c.x - 24, y, 48, 5, 3, "#ffffff20");
     rr(
@@ -429,7 +446,7 @@ function car(c: Car, ghost = false) {
       c.timer < 10 ? "#ee8b66" : "#c9dd96",
     );
     if (c.state === "requesting-departure")
-      text("↶", c.x - 7, y - 9, 22, "#f9e9ab");
+      text("OUT", c.x - 13, y - 9, 15, "#f9e9ab");
   }
 }
 // Seeded grain stays still between frames.
@@ -501,6 +518,14 @@ function render() {
     tree(o.x + o.w / 2, o.y + 35, 22);
     tree(o.x + o.w / 2, o.y + 108, 20);
   }
+  // Side gates share the aisle; traffic enters straight from both directions.
+  ctx.fillStyle = "#414b49";
+  ctx.fillRect(0, 390, 30, 115);
+  ctx.fillRect(1410, 390, 30, 115);
+  arrow(80, 418, 0, "#b7d8bb");
+  arrow(1360, 478, Math.PI, "#b7d8bb");
+  text("IN / OUT", 35, 382, 13, "#c8dbb2");
+  text("IN / OUT", 1320, 382, 13, "#c8dbb2");
   arrow(150, 435, -Math.PI / 2);
   arrow(520, 443, 0);
   arrow(930, 443, 0);
@@ -547,7 +572,11 @@ function render() {
   }
   for (const c of game.cars)
     if (["driving-in", "reversing", "driving-out"].includes(c.state))
-      line([{ x: c.x, y: c.y }, ...c.route.slice(c.index)], "#b9d3b755", true);
+      line(
+        [{ x: c.x, y: c.y }, ...c.route.slice(c.index)],
+        c.undirected ? "#e8c48635" : "#b9d3b755",
+        true,
+      );
   for (const c of game.cars) car(c);
   if (selected && draw.length > 1) {
     const v = validate(selected, draw, game.cars);
@@ -575,11 +604,7 @@ function render() {
   if (
     hover &&
     !selected &&
-    game.cars.some(
-      (c) =>
-        ["waiting", "parked", "requesting-departure"].includes(c.state) &&
-        distance(c, hover!) < 44,
-    )
+    game.cars.some((c) => c.state !== "crashed" && distance(c, hover!) < 44)
   )
     canvas.style.cursor = "grab";
   else canvas.style.cursor = selected ? "crosshair" : "default";
