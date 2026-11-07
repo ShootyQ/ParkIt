@@ -1,6 +1,9 @@
 import "./style.css";
 import {
   Game,
+  CAR_SCALE,
+  setProjectionAspect,
+  projectedHeading,
   W,
   H,
   spots,
@@ -17,6 +20,15 @@ const canvas = document.querySelector("canvas")!,
   ctx = canvas.getContext("2d")!,
   overlay = document.querySelector<HTMLDivElement>("#overlay")!,
   toast = document.querySelector<HTMLDivElement>("#toast")!;
+let projectionAspect = 1;
+function resizeProjection() {
+  const bounds = canvas.getBoundingClientRect();
+  if (!bounds.height) return;
+  projectionAspect = bounds.width / W / (bounds.height / H);
+  setProjectionAspect(projectionAspect);
+}
+new ResizeObserver(resizeProjection).observe(canvas);
+resizeProjection();
 let game = new Game(),
   selected: Car | undefined,
   draw: Point[] = [],
@@ -88,8 +100,7 @@ function isFullscreen() {
   );
 }
 function updateFullscreenButton() {
-  const active =
-    isFullscreen() || document.body.classList.contains("immersive");
+  const active = isFullscreen();
   document
     .querySelector("#fullscreen")!
     .setAttribute(
@@ -103,9 +114,12 @@ function enterFullscreen() {
   if (isFullscreen()) return;
   try {
     if (fullscreenRoot.requestFullscreen) {
-      void fullscreenRoot.requestFullscreen().catch(() => {
-        // Some mobile browsers allow only the viewport-filling layout.
-      });
+      void fullscreenRoot
+        .requestFullscreen()
+        .then(updateFullscreenButton)
+        .catch(() => {
+          updateFullscreenButton();
+        });
     } else {
       fullscreenRoot.webkitRequestFullscreen?.();
     }
@@ -114,7 +128,7 @@ function enterFullscreen() {
   }
 }
 function fullscreenChanged() {
-  if (!isFullscreen()) document.body.classList.remove("immersive");
+  // Leaving native fullscreen must not bring back the narrow page layout.
   updateFullscreenButton();
 }
 document.addEventListener("fullscreenchange", fullscreenChanged);
@@ -123,9 +137,6 @@ document.querySelector("#fullscreen")!.addEventListener("click", () => {
   if (isFullscreen()) {
     if (document.exitFullscreen) void document.exitFullscreen().catch(() => {});
     else fullscreenDoc.webkitExitFullscreen?.();
-  } else if (document.body.classList.contains("immersive")) {
-    document.body.classList.remove("immersive");
-    updateFullscreenButton();
   } else enterFullscreen();
 });
 function start(teach: boolean) {
@@ -295,9 +306,19 @@ function text(
 ) {
   ctx.fillStyle = color;
   ctx.font = `${font} ${size}px "Arial", sans-serif`;
-  ctx.fillText(s, x, y);
+  const width = ctx.measureText(s).width;
+  ctx.save();
+  ctx.translate(x + width / 2, y);
+  ctx.scale(1 / projectionAspect, 1);
+  ctx.fillText(s, -width / 2, 0);
+  ctx.restore();
 }
 function tree(x: number, y: number, r = 27) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1 / projectionAspect, 1);
+  x = 0;
+  y = 0;
   ctx.fillStyle = "#0003";
   ctx.beginPath();
   ctx.ellipse(x + 8, y + 10, r + 3, r, 0, 0, 7);
@@ -312,11 +333,13 @@ function tree(x: number, y: number, r = 27) {
     ctx.arc(x + dx, y + dy, sz, 0, 7);
     ctx.fill();
   }
+  ctx.restore();
 }
 function arrow(x: number, y: number, a: number, color = "#c7cec080") {
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate(a);
+  ctx.scale(1 / projectionAspect, 1);
+  ctx.rotate(projectedHeading(a));
   ctx.strokeStyle = color;
   ctx.lineWidth = 5;
   ctx.lineCap = "square";
@@ -345,7 +368,9 @@ function line(path: Point[], color: string, dashed = false) {
 function car(c: Car, ghost = false) {
   ctx.save();
   ctx.translate(c.x, c.y);
-  ctx.rotate(c.angle);
+  ctx.scale(1 / projectionAspect, 1);
+  ctx.rotate(projectedHeading(c.angle));
+  ctx.scale(CAR_SCALE, CAR_SCALE);
   ctx.globalAlpha = ghost ? 0.45 : 1;
   rr(-29, -12, 64, 32, 9, "#0004");
   rr(-31, -17, 62, 34, 8, c.state === "crashed" ? "#625c55" : c.color);
@@ -371,7 +396,7 @@ function car(c: Car, ghost = false) {
   ctx.fillRect(13, 16, 12, 4);
   ctx.restore();
   if (["waiting", "requesting-departure"].includes(c.state)) {
-    const y = c.y - 45;
+    const y = c.y - 52;
     rr(c.x - 24, y, 48, 5, 3, "#ffffff20");
     rr(
       c.x - 24,

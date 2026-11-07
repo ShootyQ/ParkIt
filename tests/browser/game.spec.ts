@@ -202,6 +202,33 @@ test("fullscreen denial still starts a viewport-filling playable game", async ({
   await page.getByRole("button", { name: "Skip tutorial" }).click();
   await expect(page.locator("body")).toHaveClass("immersive");
   await expect(page.locator("#overlay")).not.toBeVisible();
-  await page.getByRole("button", { name: "Exit fullscreen" }).click();
-  await expect(page.locator("body")).not.toHaveClass("immersive");
+  await page.getByRole("button", { name: "Enter fullscreen" }).click();
+  await expect(page.locator("body")).toHaveClass("immersive");
+});
+
+test("embedded phone browser fills the width before and after starting", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 1190, height: 425 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    Element.prototype.requestFullscreen = () =>
+      Promise.reject(new Error("Embedded browser"));
+  });
+  await page.goto("/");
+  for (const started of [false, true]) {
+    if (started)
+      await page.getByRole("button", { name: "Skip tutorial" }).tap();
+    const box = (await page.locator("canvas").boundingBox())!;
+    expect(box.x).toBeCloseTo(0, 0);
+    expect(box.width).toBeCloseTo(1190, 0);
+    expect(box.y + box.height).toBeLessThanOrEqual(425);
+    expect(box.height).toBeGreaterThan(375);
+  }
+  await page.screenshot({ path: "/tmp/parkit-edge-to-edge.png" });
+  await context.close();
 });

@@ -24,10 +24,11 @@ export type Car = {
   gear: number;
   pause: number;
 };
+export const CAR_SCALE = 1.15;
 export const W = 1440,
   H = 900,
-  CAR_L = 62,
-  CAR_W = 32;
+  CAR_L = 62 * CAR_SCALE,
+  CAR_W = 34 * CAR_SCALE;
 export const spots: Spot[] = Array.from({ length: 16 }, (_, i) => ({
   id: i,
   x: 300 + (i % 8) * 100,
@@ -42,18 +43,27 @@ export const obstacles: Rect[] = [
   { x: 245, y: 518, w: 35, h: 150 },
   { x: 1110, y: 518, w: 40, h: 150 },
 ];
+// Viewport projection expands the aisles while keeping vehicles proportional.
+let projectionAspect = 1;
+export function setProjectionAspect(ratio: number) {
+  projectionAspect = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+}
+export function projectedHeading(angle: number) {
+  return Math.atan2(Math.sin(angle), projectionAspect * Math.cos(angle));
+}
 export const distance = (a: Point, b: Point) =>
   Math.hypot(a.x - b.x, a.y - b.y);
 export const angleDiff = (a: number, b: number) =>
   Math.atan2(Math.sin(a - b), Math.cos(a - b));
 export function corners(p: Point, a: number, pad = 0): Point[] {
+  a = projectedHeading(a);
   return [
     [-CAR_L / 2 - pad, -CAR_W / 2 - pad],
     [CAR_L / 2 + pad, -CAR_W / 2 - pad],
     [CAR_L / 2 + pad, CAR_W / 2 + pad],
     [-CAR_L / 2 - pad, CAR_W / 2 + pad],
   ].map(([x, y]) => ({
-    x: p.x + x * Math.cos(a) - y * Math.sin(a),
+    x: p.x + (x * Math.cos(a) - y * Math.sin(a)) / projectionAspect,
     y: p.y + x * Math.sin(a) + y * Math.cos(a),
   }));
 }
@@ -182,7 +192,7 @@ export function validate(
     previous = angle;
     const box = corners(b, angle);
     if (
-      box.some((p) => p.x < 35 || p.x > 1405 || p.y < 190 || p.y > 865) ||
+      box.some((p) => p.x < 35 || p.x > 1415 || p.y < 190 || p.y > 865) ||
       obstacles.some((r) => overlap(box, rectPoints(r)))
     )
       return { error: "Watch the curb — give your car some room.", path, gear };

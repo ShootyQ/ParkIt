@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   Game,
+  CAR_L,
+  CAR_W,
+  setProjectionAspect,
   parkingSpot,
   corners,
   overlap,
@@ -182,4 +185,19 @@ describe("departure maneuver", () => {
     expect(g.exits).toBe(1);
     expect(g.score).toBe(150);
   });
+});
+
+it("keeps enlarged vehicle proportions and collision bounds aligned on wide phones", () => {
+  setProjectionAspect(2);
+  try {
+    const points = corners({ x: 400, y: 400 }, -Math.PI / 2);
+    const width =
+      Math.max(...points.map((p) => p.x)) - Math.min(...points.map((p) => p.x));
+    const height =
+      Math.max(...points.map((p) => p.y)) - Math.min(...points.map((p) => p.y));
+    expect(width * 2).toBeCloseTo(CAR_W);
+    expect(height).toBeCloseTo(CAR_L);
+  } finally {
+    setProjectionAspect(1);
+  }
 });

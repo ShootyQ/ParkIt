@@ -42,3 +42,9 @@ The lot is drawn from the same geometry used by collision checks. Cars use orien
 GitHub Actions builds and deploys pushes to `main` using `.github/workflows/deploy.yml`.
 In repository **Settings → Pages**, select **GitHub Actions** as the build source.
 Vite uses relative asset URLs so the game works under the repository's `/ParkIt/` path.
+
+## Full-width phone play
+
+The game fills the viewport from initial load, including in embedded browsers that reject native fullscreen. Cars and collision bounds are 15% larger; vehicle proportions stay consistent as the lot expands across wide screens.
+
+On iPhone, a webpage cannot dismiss an in-app browser's status and address bars. Open the game in Safari, use **Share → Add to Home Screen** (enable **Open as Web App** if shown), and launch that icon for standalone play. The included web app manifest and Apple metadata support that launch mode; no offline caching is installed.

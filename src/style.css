@@ -566,3 +566,63 @@ body.immersive {
     font-size: 16px;
   }
 }
+
+/* Edge-to-edge play is the default, even when an embedded browser denies native fullscreen. */
+html,
+body.immersive,
+.immersive #app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+body.immersive {
+  position: fixed;
+  inset: 0;
+  min-height: 0;
+  height: 100dvh;
+}
+.immersive main {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+.immersive .game-shell {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.immersive .toolbar {
+  flex: 0 0 54px;
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+.immersive .canvas-wrap {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+}
+.immersive canvas {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+}
+.immersive .game-footer {
+  flex: 0 0 26px;
+  padding-bottom: max(7px, env(safe-area-inset-bottom));
+}
+@media (max-height: 600px) and (orientation: landscape) {
+  .immersive main {
+    width: 100%;
+  }
+  .immersive .toolbar {
+    flex-basis: 44px;
+  }
+  .immersive .game-footer {
+    display: none;
+  }
+  .immersive .lot-label {
+    bottom: 8px;
+  }
+}
