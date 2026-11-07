@@ -9,10 +9,8 @@ export type State =
   | "driving-out"
   | "crashed";
 export type Spot = Rect & { id: number };
-export type Car = {
+export type Car = Point & {
   id: number;
-  x: number;
-  y: number;
   angle: number;
   color: string;
   state: State;
@@ -23,19 +21,35 @@ export type Car = {
   wait: number;
   gear: number;
   pause: number;
+  reverse?: boolean[];
+  credited?: boolean;
 };
 export const CAR_SCALE = 1.15;
 export const W = 1440,
   H = 900,
   CAR_L = 62 * CAR_SCALE,
   CAR_W = 34 * CAR_SCALE;
-export const spots: Spot[] = Array.from({ length: 16 }, (_, i) => ({
-  id: i,
-  x: 300 + (i % 8) * 100,
-  y: i < 8 ? 228 : 518,
-  w: 90,
-  h: 140,
+let projectionAspect = 1;
+export const spots: Spot[] = Array.from({ length: 16 }, (_, id) => ({
+  id,
+  x: 0,
+  y: 0,
+  w: 0,
+  h: 0,
 }));
+export function setProjectionAspect(ratio: number) {
+  projectionAspect = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+  for (const s of spots) {
+    s.w = (CAR_W + 12) / projectionAspect;
+    s.h = CAR_L + 14;
+    s.x = 345 + (s.id % 8) * 100 - s.w / 2;
+    s.y = (s.id < 8 ? 298 : 588) - s.h / 2;
+  }
+}
+setProjectionAspect(1);
+export function projectedHeading(a: number) {
+  return Math.atan2(Math.sin(a), projectionAspect * Math.cos(a));
+}
 export const obstacles: Rect[] = [
   { x: 0, y: 0, w: 1440, h: 187 },
   { x: 245, y: 218, w: 35, h: 150 },
@@ -43,14 +57,6 @@ export const obstacles: Rect[] = [
   { x: 245, y: 518, w: 35, h: 150 },
   { x: 1110, y: 518, w: 40, h: 150 },
 ];
-// Viewport projection expands the aisles while keeping vehicles proportional.
-let projectionAspect = 1;
-export function setProjectionAspect(ratio: number) {
-  projectionAspect = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
-}
-export function projectedHeading(angle: number) {
-  return Math.atan2(Math.sin(angle), projectionAspect * Math.cos(angle));
-}
 export const distance = (a: Point, b: Point) =>
   Math.hypot(a.x - b.x, a.y - b.y);
 export const angleDiff = (a: number, b: number) =>
@@ -70,9 +76,9 @@ export function corners(p: Point, a: number, pad = 0): Point[] {
 export function overlap(a: Point[], b: Point[]): boolean {
   for (const poly of [a, b])
     for (let i = 0; i < poly.length; i++) {
-      const q = poly[i],
-        r = poly[(i + 1) % poly.length],
-        n = { x: -(r.y - q.y), y: r.x - q.x };
+      const p = poly[i],
+        q = poly[(i + 1) % poly.length],
+        n = { x: p.y - q.y, y: q.x - p.x };
       const aa = a.map((p) => p.x * n.x + p.y * n.y),
         bb = b.map((p) => p.x * n.x + p.y * n.y);
       if (
@@ -89,31 +95,26 @@ export const rectPoints = (r: Rect): Point[] => [
   { x: r.x + r.w, y: r.y + r.h },
   { x: r.x, y: r.y + r.h },
 ];
+/** Parking is an outcome of driving, never a prerequisite for accepting a line. */
+export function parkingSpot(p: Point, a: number): Spot | undefined {
+  return spots.find((s) =>
+    corners(p, a).every(
+      (c) =>
+        c.x >= s.x - 1 &&
+        c.x <= s.x + s.w + 1 &&
+        c.y >= s.y - 1 &&
+        c.y <= s.y + s.h + 1,
+    ),
+  );
+}
+/** Subdivide only. Preserve every drawn corner, crossing, turnaround and endpoint. */
 export function smooth(points: Point[]): Point[] {
-  if (points.length < 2) return points;
-  let p = points;
-  for (let k = 0; k < 3; k++) {
-    const n = [p[0]];
-    for (let i = 0; i < p.length - 1; i++) {
-      n.push(
-        {
-          x: 0.75 * p[i].x + 0.25 * p[i + 1].x,
-          y: 0.75 * p[i].y + 0.25 * p[i + 1].y,
-        },
-        {
-          x: 0.25 * p[i].x + 0.75 * p[i + 1].x,
-          y: 0.25 * p[i].y + 0.75 * p[i + 1].y,
-        },
-      );
-    }
-    n.push(p[p.length - 1]);
-    p = n;
-  }
-  const out = [p[0]];
-  for (let i = 1; i < p.length; i++) {
-    const a = out[out.length - 1],
-      b = p[i],
-      steps = Math.ceil(distance(a, b) / 5);
+  if (!points.length) return [];
+  const out = [{ ...points[0] }];
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1],
+      b = points[i],
+      steps = distance(a, b) < 1e-6 ? 0 : Math.ceil(distance(a, b) / 4);
     for (let j = 1; j <= steps; j++)
       out.push({
         x: a.x + ((b.x - a.x) * j) / steps,
@@ -122,220 +123,35 @@ export function smooth(points: Point[]): Point[] {
   }
   return out;
 }
-export function parkingSpot(p: Point, a: number): Spot | undefined {
-  return spots.find(
-    (s) =>
-      Math.abs(angleDiff(a, s.id < 8 ? -Math.PI / 2 : Math.PI / 2)) <=
-        Math.PI / 12 &&
-      corners(p, a).every(
-        (c) =>
-          c.x > s.x + 3 &&
-          c.x < s.x + s.w - 3 &&
-          c.y > s.y + 3 &&
-          c.y < s.y + s.h - 3,
-      ),
-  );
-}
-/** Remove redundant pointer samples before smoothing: dense touch events must not create tighter turns. */
-function simplify(points: Point[], tolerance = 5): Point[] {
-  if (points.length < 3) return points;
-  const keep = new Set([0, points.length - 1]);
-  const pending = [[0, points.length - 1]];
-  while (pending.length) {
-    const [start, end] = pending.pop()!;
-    const a = points[start],
-      b = points[end],
-      dx = b.x - a.x,
-      dy = b.y - a.y,
-      length = dx * dx + dy * dy;
-    let farthest = -1,
-      max = tolerance * tolerance;
-    for (let i = start + 1; i < end; i++) {
-      const p = points[i],
-        t = length
-          ? Math.max(
-              0,
-              Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length),
-            )
-          : 0;
-      const d = (p.x - a.x - t * dx) ** 2 + (p.y - a.y - t * dy) ** 2;
-      if (d > max) {
-        max = d;
-        farthest = i;
-      }
-    }
-    if (farthest >= 0) {
-      keep.add(farthest);
-      pending.push([start, farthest], [farthest, end]);
-    }
-  }
-  return [...keep].sort((a, b) => a - b).map((i) => points[i]);
-}
-/** Preserve the drawn route, but remove release jitter and fit its endpoint in the bay. */
-function parkingInput(raw: Point[]): Point[] {
-  if (raw.length < 2) return raw;
-  const end = raw[raw.length - 1];
-  const bay = spots.find(
-    (s) =>
-      end.x >= s.x && end.x <= s.x + s.w && end.y >= s.y && end.y <= s.y + s.h,
-  );
-  if (!bay) return raw;
-  const angle = bay.id < 8 ? -Math.PI / 2 : Math.PI / 2;
-  const footprint = corners({ x: 0, y: 0 }, angle);
-  const halfWidth = Math.max(...footprint.map((p) => Math.abs(p.x))) + 5;
-  const halfHeight = CAR_L / 2 + 5;
-  const fitted = {
-    x: Math.max(bay.x + halfWidth, Math.min(bay.x + bay.w - halfWidth, end.x)),
-    y: Math.max(
-      bay.y + halfHeight,
-      Math.min(bay.y + bay.h - halfHeight, end.y),
-    ),
-  };
-  let last = raw.length - 2;
-  // A few pixels of movement while lifting a finger must not reverse the heading.
-  while (last > 0 && distance(raw[last], end) < 12) last--;
-  return [...raw.slice(0, last + 1), fitted];
-}
-function validateExact(
-  car: Car,
-  raw: Point[],
-  cars: Car[],
-  assisted = false,
-): { error?: string; path: Point[]; spot?: number; gear: number } {
-  const depart = car.state === "requesting-departure";
-  if (!depart && !assisted) raw = parkingInput(simplify(raw));
-  let path = smooth(raw),
-    gear = -1;
-  if (depart) {
-    const enter = raw.findIndex((p) => p.y > 405 && p.y < 480);
-    if (enter >= 0) {
-      let pivot = enter;
-      const sign = car.y < 443 ? 1 : -1;
-      while (
-        pivot + 1 < raw.length &&
-        (raw[pivot + 1].y - raw[pivot].y) * sign > 0
-      )
-        pivot++;
-      const back = smooth(raw.slice(0, pivot + 1)),
-        forward = smooth(raw.slice(pivot));
-      gear = back.length - 1;
-      path = [...back, ...forward.slice(1)];
-    }
-  }
-  if (path.length < 3 || distance(path[0], path[path.length - 1]) < 15)
-    return { error: "Draw a complete route.", path, gear };
-  if (depart) {
-    if (gear < 0)
-      return { error: "Reverse into the center aisle first.", path, gear };
-    if (path[path.length - 1].x < 1270 || path[path.length - 1].y < 730)
-      return { error: "Finish at the EXIT arrow.", path, gear };
-  }
-  const end = path[path.length - 1],
-    prev = path[path.length - 2],
-    heading = Math.atan2(end.y - prev.y, end.x - prev.x),
-    spot = depart ? undefined : parkingSpot(end, heading);
-  if (!depart && !spot)
-    return { error: "Parking approach needs alignment.", path, gear };
-  if (spot && cars.some((c) => c.id !== car.id && c.spot === spot.id))
-    return { error: "That space is already reserved.", path, gear };
-  let previous = car.angle;
-  for (let i = 1; i < path.length; i++) {
-    const a = path[i - 1],
-      b = path[i],
-      d = distance(a, b);
-    if (d < 0.01) continue;
-    let angle = Math.atan2(b.y - a.y, b.x - a.x);
-    if (depart && i <= gear) angle += Math.PI;
-    if (
-      !assisted &&
-      !(depart && Math.abs(i - gear) <= 3) &&
-      Math.abs(angleDiff(angle, previous)) > Math.max(0.16, d / 18 + 0.06)
-    )
-      return { error: "Too sharp! Draw a wider turn.", path, gear };
-    previous = angle;
-    const box = corners(b, angle);
-    if (
-      box.some((p) => p.x < 35 || p.x > 1415 || p.y < 190 || p.y > 865) ||
-      obstacles.some((r) => overlap(box, rectPoints(r)))
-    )
-      return { error: "Watch the curb — give your car some room.", path, gear };
-    if (
-      cars.some(
-        (c) =>
-          c.id !== car.id &&
-          ["parked", "requesting-departure"].includes(c.state) &&
-          overlap(box, corners(c, c.angle)),
-      )
-    )
-      return { error: "There’s a parked car in the way.", path, gear };
-  }
-  return { path, spot: spot?.id, gear };
-}
-/** A safe aisle approach for simple drags; final alignment is handled by the car. */
-function aisleRoute(car: Car, spot: Spot): Point[] {
-  const x = spot.x + spot.w / 2;
-  const top = spot.id < 8;
-  const route: Point[] = [
-    { x: car.x, y: car.y },
-    { x: 150, y: 503 },
-  ];
-  const arc = (cx: number, cy: number, from: number, to: number) => {
-    for (let i = 1; i <= 18; i++) {
-      const a = from + ((to - from) * i) / 18;
-      route.push({ x: cx + 60 * Math.cos(a), y: cy + 60 * Math.sin(a) });
-    }
-  };
-  arc(210, 503, Math.PI, Math.PI * 1.5);
-  route.push({ x: x - 60, y: 443 });
-  if (top) arc(x - 60, 383, Math.PI / 2, 0);
-  else arc(x - 60, 503, -Math.PI / 2, 0);
-  route.push({ x, y: spot.y + spot.h / 2 });
-  return route;
-}
 export function validate(
   car: Car,
   raw: Point[],
-  cars: Car[],
-): { error?: string; path: Point[]; spot?: number; gear: number } {
-  if (car.state === "requesting-departure")
-    return validateExact(car, raw, cars);
-  if (raw.length < 2 || distance(raw[0], raw[raw.length - 1]) < 15)
+  _cars: Car[],
+): { error?: string; path: Point[]; gear: number; reverse: boolean[] } {
+  const path = smooth([{ x: car.x, y: car.y }, ...raw]);
+  if (path.length < 2)
     return {
-      error: "Draw a complete route into an empty parking space.",
-      path: raw,
+      error: "Draw a line from the car to get moving.",
+      path,
       gear: -1,
+      reverse: [],
     };
-  const end = raw[raw.length - 1];
-  const destination = spots.find(
-    (s) =>
-      end.x >= s.x - 5 &&
-      end.x <= s.x + s.w + 5 &&
-      end.y >= s.y - 5 &&
-      end.y <= s.y + s.h + 5,
-  );
-  if (!destination)
-    return {
-      error: "Finish your line inside an empty parking space.",
-      path: smooth(raw),
-      gear: -1,
-    };
-  if (cars.some((c) => c.id !== car.id && c.spot === destination.id))
-    return {
-      error: "That space is already reserved.",
-      path: smooth(raw),
-      gear: -1,
-    };
-  const drawn = validateExact(car, raw, cars);
-  if (!drawn.error) return drawn;
-  // A direct drag or sideways release selects the space; never reject it for final heading.
-  const assisted = validateExact(car, aisleRoute(car, destination), cars, true);
-  if (assisted.error)
-    return {
-      ...assisted,
-      error: "The aisle is blocked. Try another open space.",
-    };
-  return assisted;
+  const reverse: boolean[] = [false];
+  let heading = car.angle,
+    gear = -1;
+  for (let i = 1; i < path.length; i++) {
+    const a = Math.atan2(path[i].y - path[i - 1].y, path[i].x - path[i - 1].x);
+    const back =
+      Math.abs(angleDiff(projectedHeading(a), projectedHeading(heading))) >
+      Math.PI / 2 + 1e-6;
+    reverse.push(back);
+    heading = a + (back ? Math.PI : 0);
+    if (i > 1 && reverse[i - 1] && !back && gear < 0) gear = i;
+  }
+  return { path, gear, reverse };
 }
+const moving = (c: Car) =>
+  ["driving-in", "driving-out", "reversing"].includes(c.state);
 export class Game {
   cars: Car[] = [];
   score = 0;
@@ -352,16 +168,17 @@ export class Game {
     return 1 + Math.floor(this.exits / 5);
   }
   spawn() {
-    if (this.cars.filter((c) => c.state === "waiting").length >= 3) {
+    const waiting = this.cars.filter(
+      (c) => c.state === "waiting" && !c.credited,
+    );
+    if (waiting.length >= 3) {
       this.mistake("Entrance backed up!");
       return;
     }
     const n =
       [0, 1, 2].find(
         (i) =>
-          !this.cars.some(
-            (c) => c.state === "waiting" && Math.abs(c.y - (614 + i * 78)) < 60,
-          ),
+          !this.cars.some((c) => distance(c, { x: 150, y: 614 + i * 78 }) < 70),
       ) ?? 0;
     this.cars.push({
       id: this.nextId++,
@@ -386,18 +203,68 @@ export class Game {
     if (!this.lives) this.over = true;
   }
   commit(car: Car, raw: Point[]) {
-    const v = validate(car, raw, this.cars);
-    if (v.error) return v.error;
-    car.route = v.path;
+    if (car.state === "crashed") return "That car is out of action.";
+    const plan = validate(car, raw, this.cars);
+    if (plan.error) return plan.error;
+    car.route = plan.path;
+    car.reverse = plan.reverse;
     car.index = 1;
-    car.gear = v.gear;
-    car.spot = v.spot ?? car.spot;
-    car.state =
-      car.state === "requesting-departure" ? "reversing" : "driving-in";
+    car.gear = plan.gear;
+    car.spot = undefined;
+    car.pause = 0;
+    car.state = plan.reverse[1]
+      ? "reversing"
+      : car.credited
+        ? "driving-out"
+        : "driving-in";
     return undefined;
+  }
+  private wallHit(c: Car) {
+    const box = corners(c, c.angle);
+    return (
+      box.some((p) => p.x < 25 || p.x > 1415 || p.y < 190 || p.y > 875) ||
+      obstacles.some((o) => overlap(box, rectPoints(o)))
+    );
+  }
+  private finish(c: Car) {
+    if (c.x >= 1270 && c.y >= 730) {
+      if (c.credited) {
+        this.score += 150;
+        this.exits++;
+        this.events.push("Safe travels! +150");
+      } else this.events.push("Just passing through!");
+      this.remove(c);
+      return;
+    }
+    const spot = parkingSpot(c, c.angle);
+    if (
+      spot &&
+      !this.cars.some((other) => other.id !== c.id && other.spot === spot.id)
+    ) {
+      c.spot = spot.id;
+      c.state = "parked";
+      c.wait = this.tutorial ? 3 : 15 + Math.random() * 10;
+      if (!c.credited) {
+        c.credited = true;
+        this.score += 100;
+        this.events.push("Nice parking! +100");
+      }
+    } else {
+      c.state = "waiting";
+      c.timer = 30;
+      this.events.push("Stopped. Draw another line to keep going.");
+    }
   }
   update(dt: number) {
     if (this.paused || this.over) return;
+    // Bound movement steps even when a caller provides a long frame.
+    while (dt > 1e-8 && !this.over && !this.paused) {
+      const step = Math.min(dt, 1 / 60);
+      this.step(step);
+      dt -= step;
+    }
+  }
+  private step(dt: number) {
     this.time += dt;
     if (!this.tutorial) {
       this.spawnTimer -= dt;
@@ -406,6 +273,7 @@ export class Game {
         this.spawnTimer = Math.max(3, 8 - Math.floor(this.exits / 5) * 0.5);
       }
     }
+    const moved = new Set<number>();
     for (const c of [...this.cars]) {
       if (c.state === "waiting" || c.state === "requesting-departure") {
         if (!this.tutorial) c.timer -= dt;
@@ -420,7 +288,7 @@ export class Game {
         if (c.wait <= 0) {
           c.state = "requesting-departure";
           c.timer = 30;
-          this.events.push("Reverse lights! Draw this car to the exit.");
+          this.events.push("Reverse lights! Draw this car toward the exit.");
         }
         continue;
       }
@@ -429,61 +297,51 @@ export class Game {
         if (c.timer <= 0) this.remove(c);
         continue;
       }
-      if (c.pause > 0) {
-        c.pause -= dt;
-        continue;
-      }
-      let travel = (c.state === "reversing" ? 55 : 90) * dt;
-      while (travel > 0 && c.index < c.route.length) {
+      if (!moving(c)) continue;
+      moved.add(c.id);
+      let time = dt;
+      while (time > 1e-8 && c.index < c.route.length) {
         const target = c.route[c.index],
           d = distance(c, target);
-        const a = Math.atan2(target.y - c.y, target.x - c.x);
-        c.angle = a + (c.state === "reversing" ? Math.PI : 0);
-        if (d <= travel) {
-          c.x = target.x;
-          c.y = target.y;
-          travel -= d;
+        if (d < 1e-8) {
           c.index++;
-          if (c.state === "reversing" && c.index > c.gear) {
-            c.state = "driving-out";
-            c.pause = 0.45;
-            travel = 0;
-          }
-        } else {
-          c.x += ((target.x - c.x) / d) * travel;
-          c.y += ((target.y - c.y) / d) * travel;
-          travel = 0;
+          continue;
         }
-      }
-      if (c.index >= c.route.length) {
-        if (c.state === "driving-in") {
-          c.state = "parked";
-          c.wait = this.tutorial ? 3 : 15 + Math.random() * 10;
-          this.score += 100;
-          this.events.push("Perfectly parked. +100");
-        } else {
-          this.score += 150;
-          this.exits++;
-          this.remove(c);
-          this.events.push("Safe travels! +150");
+        const back = c.reverse?.[c.index] ?? false;
+        c.state = back
+          ? "reversing"
+          : c.credited
+            ? "driving-out"
+            : "driving-in";
+        c.angle =
+          Math.atan2(target.y - c.y, target.x - c.x) + (back ? Math.PI : 0);
+        const speed = back ? 55 : 90,
+          travel = Math.min(d, speed * time);
+        c.x += ((target.x - c.x) / d) * travel;
+        c.y += ((target.y - c.y) / d) * travel;
+        time -= travel / speed;
+        if (c.x >= 1370 && c.y >= 730 && target.x - c.x >= -1e-8) {
+          this.finish(c);
+          break;
         }
+        if (this.wallHit(c)) {
+          c.state = "crashed";
+          c.timer = 1;
+          c.spot = undefined;
+          this.mistake("Crunch! That line met a curb.");
+          break;
+        }
+        if (travel >= d - 1e-8) c.index++;
       }
     }
-    const active = this.cars.filter((c) => c.state !== "crashed");
-    const hit = new Set<Car>();
+    const active = this.cars.filter((c) => c.state !== "crashed"),
+      hit = new Set<Car>();
     for (let i = 0; i < active.length; i++)
       for (let j = i + 1; j < active.length; j++) {
         const a = active[i],
           b = active[j];
-        if (
-          !["driving-in", "reversing", "driving-out"].includes(a.state) &&
-          !["driving-in", "reversing", "driving-out"].includes(b.state)
-        )
-          continue;
-        if (
-          distance(a, b) < 70 &&
-          overlap(corners(a, a.angle), corners(b, b.angle))
-        ) {
+        if (!moved.has(a.id) && !moved.has(b.id)) continue;
+        if (overlap(corners(a, a.angle), corners(b, b.angle))) {
           hit.add(a);
           hit.add(b);
         }
@@ -494,8 +352,10 @@ export class Game {
         c.timer = 1;
         c.spot = undefined;
       }
-      this.mistake("Bumper meeting. Keep an eye on crossing routes!");
+      this.mistake("Bumper meeting! Watch those crossing lines.");
     }
+    for (const c of this.cars)
+      if (moving(c) && c.index >= c.route.length) this.finish(c);
   }
   remove(c: Car) {
     this.cars = this.cars.filter((v) => v !== c);

@@ -29,6 +29,8 @@ function resizeProjection() {
 }
 new ResizeObserver(resizeProjection).observe(canvas);
 resizeProjection();
+let strokeStart: Point | undefined;
+let strokeMoved = false;
 let game = new Game(),
   selected: Car | undefined,
   draw: Point[] = [],
@@ -156,7 +158,7 @@ function start(teach: boolean) {
   sync();
   if (teach)
     notify(
-      "01 / Draw from the car into any empty space. The car will line itself up.",
+      "01 / Draw the car’s path. It follows your line exactly — forward or backward.",
     );
   sound();
 }
@@ -209,7 +211,7 @@ document.querySelector("#help")!.addEventListener("click", () => {
   game.paused = true;
   show(
     "A little parking practice.",
-    "Draw from a car into any empty space. The car handles the final turn; a direct drag gets a safe route through the aisle. When reverse lights blink, draw backward into the center aisle, then forward to the exit. Crossing traffic is your responsibility.",
+    "Draw the exact path you want. Start behind the car to reverse. Lines are never corrected: dodge cars and curbs, then stop inside a space. If you miss, draw another line. When reverse lights blink, draw backward into the center aisle, then forward to the exit. Crossing traffic is your responsibility.",
     "Try the tutorial",
     () => start(true),
   );
@@ -240,10 +242,12 @@ canvas.addEventListener("pointerdown", (e) => {
   const p = point(e);
   selected = game.cars.find(
     (c) =>
-      ["waiting", "requesting-departure"].includes(c.state) &&
+      ["waiting", "parked", "requesting-departure"].includes(c.state) &&
       distance(c, p) < 44,
   );
   if (selected) {
+    strokeStart = { x: e.clientX, y: e.clientY };
+    strokeMoved = false;
     draw = [{ x: selected.x, y: selected.y }];
     canvas.setPointerCapture(e.pointerId);
     e.preventDefault();
@@ -251,12 +255,28 @@ canvas.addEventListener("pointerdown", (e) => {
 });
 canvas.addEventListener("pointermove", (e) => {
   hover = point(e);
-  if (selected && distance(draw[draw.length - 1], hover) > 7) draw.push(hover);
+  if (
+    selected &&
+    strokeStart &&
+    distance(strokeStart, { x: e.clientX, y: e.clientY }) > 2
+  )
+    strokeMoved = true;
+  if (selected && distance(draw[draw.length - 1], hover) > 2) draw.push(hover);
 });
 canvas.addEventListener("pointerup", (e) => {
   if (!selected) return;
+  if (
+    !strokeMoved &&
+    strokeStart &&
+    distance(strokeStart, { x: e.clientX, y: e.clientY }) <= 2
+  ) {
+    notify("Draw a line from the car to get moving.");
+    selected = undefined;
+    draw = [];
+    return;
+  }
   const p = point(e);
-  if (distance(draw[draw.length - 1], p) > 1) draw.push(p);
+  if (distance(draw[draw.length - 1], p) > 0) draw.push(p);
   const err = game.commit(selected, draw);
   if (err) {
     notify(err);
@@ -269,9 +289,7 @@ canvas.addEventListener("pointerup", (e) => {
         "Nice! Watch the car park. Reverse lights will tell you when it’s ready to leave.",
       );
     } else {
-      notify(
-        `On my way! Space ${String((selected.spot ?? 0) + 1).padStart(2, "0")}.`,
-      );
+      notify(`Following your line!`);
     }
   }
   draw = [];
@@ -399,7 +417,7 @@ function car(c: Car, ghost = false) {
   ctx.fillRect(-20, 16, 12, 4);
   ctx.fillRect(13, 16, 12, 4);
   ctx.restore();
-  if (["waiting", "requesting-departure"].includes(c.state)) {
+  if (["waiting", "parked", "requesting-departure"].includes(c.state)) {
     const y = c.y - 52;
     rr(c.x - 24, y, 48, 5, 3, "#ffffff20");
     rr(
@@ -464,7 +482,7 @@ function render() {
     ctx.stroke();
     text(
       String(s.id + 1).padStart(2, "0"),
-      s.x + 35,
+      s.x + s.w / 2 - 7,
       s.id < 8 ? s.y + 21 : s.y + s.h - 12,
       11,
       "#d5dbc25c",
@@ -472,7 +490,7 @@ function render() {
     if (!occupied) {
       ctx.fillStyle = "#c8d7ad35";
       ctx.beginPath();
-      ctx.arc(s.x + 45, s.y + 70, 3, 0, 7);
+      ctx.arc(s.x + s.w / 2, s.y + s.h / 2, 3, 0, 7);
       ctx.fill();
     }
   }
@@ -534,13 +552,16 @@ function render() {
   if (selected && draw.length > 1) {
     const v = validate(selected, draw, game.cars);
     line(v.path, v.error ? "#f1c480" : "#c6e5a9");
+    if (v.path.length < 2) return;
     const p = v.path[v.path.length - 1],
       q = v.path[v.path.length - 2];
     car(
       {
         ...selected,
         ...p,
-        angle: Math.atan2(p.y - q.y, p.x - q.x),
+        angle:
+          Math.atan2(p.y - q.y, p.x - q.x) +
+          (v.reverse[v.path.length - 1] ? Math.PI : 0),
         state: "parked",
       },
       true,
@@ -556,7 +577,7 @@ function render() {
     !selected &&
     game.cars.some(
       (c) =>
-        ["waiting", "requesting-departure"].includes(c.state) &&
+        ["waiting", "parked", "requesting-departure"].includes(c.state) &&
         distance(c, hover!) < 44,
     )
   )

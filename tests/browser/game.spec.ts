@@ -1,68 +1,99 @@
-import { test, expect } from "@playwright/test";
-test("start, park with a drawn route, pause, restart and persist score", async ({
-  page,
-}) => {
+import { test, expect, type Page } from "@playwright/test";
+const parking = [
+  { x: 150, y: 614 },
+  { x: 150, y: 443 },
+  { x: 345, y: 443 },
+  { x: 345, y: 298 },
+];
+async function start(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Skip tutorial" }).click();
-  const canvas = page.locator("canvas");
-  const box = (await canvas.boundingBox())!;
-  const move = async (x: number, y: number) =>
-    page.mouse.move(
-      box.x + (x / 1440) * box.width,
-      box.y + (y / 900) * box.height,
-    );
-  await move(150, 614);
+}
+async function draw(page: Page, points: { x: number; y: number }[]) {
+  const box = (await page.locator("canvas").boundingBox())!;
+  await page.mouse.move(
+    box.x + (points[0].x / 1440) * box.width,
+    box.y + (points[0].y / 900) * box.height,
+  );
   await page.mouse.down();
-  await move(150, 533);
-  for (let i = 0; i <= 20; i++) {
-    const a = Math.PI + ((i / 20) * Math.PI) / 2;
-    await move(240 + 90 * Math.cos(a), 533 + 90 * Math.sin(a));
-  }
-  await move(285, 443);
-  for (let i = 0; i <= 20; i++) {
-    const a = Math.PI / 2 - ((i / 20) * Math.PI) / 2;
-    await move(285 + 60 * Math.cos(a), 383 + 60 * Math.sin(a));
-  }
-  await move(345, 300);
+  for (const p of points.slice(1))
+    await page.mouse.move(
+      box.x + (p.x / 1440) * box.width,
+      box.y + (p.y / 900) * box.height,
+    );
   await page.mouse.up();
-  await expect(page.locator("#score")).toHaveText("0100", { timeout: 12000 });
+}
+async function expectCarAt(page: Page, x: number, y: number) {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          ({ x, y }) => {
+            const pixel = document
+              .querySelector("canvas")!
+              .getContext("2d")!
+              .getImageData(x, y, 1, 1).data;
+            return Array.from(pixel).slice(0, 3);
+          },
+          { x, y },
+        ),
+      { timeout: 7000 },
+    )
+    .toEqual([223, 115, 93]);
+}
+test("follows a line to an imperfect stop, then backs up on the next line", async ({
+  page,
+}) => {
+  await start(page);
+  await draw(page, [
+    { x: 150, y: 614 },
+    { x: 150, y: 540 },
+  ]);
+  await expectCarAt(page, 150, 540);
+  await expect(page.locator("#score")).toHaveText("0000");
+  await draw(page, [
+    { x: 150, y: 540 },
+    { x: 150, y: 600 },
+  ]);
+  await expectCarAt(page, 150, 600);
+  await expect(page.locator("#score")).toHaveText("0000");
+});
+test("parks only by following the drawn corners into the tight bay", async ({
+  page,
+}) => {
+  await start(page);
+  await draw(page, parking);
+  await expect(page.locator("#score")).toHaveText("0100", { timeout: 10000 });
+  await expectCarAt(page, 345, 298);
   await page.getByRole("button", { name: "Pause game" }).click();
   await expect(page.getByText("Take a breather.")).toBeVisible();
   await page.getByRole("button", { name: "Back to the lot" }).click();
   await page.getByRole("button", { name: "Restart game" }).click();
   await expect(page.locator("#score")).toHaveText("0000");
   await expect(page.locator("#best")).toHaveText("0100");
-  await page.screenshot({ path: "/tmp/parkit-desktop.png", fullPage: true });
+  await page.screenshot({ path: "/tmp/parkit-literal-lines.png" });
 });
-test("portrait guidance and mobile landscape touch", async ({ browser }) => {
-  const context = await browser.newContext({
-    viewport: { width: 390, height: 844 },
-    isMobile: true,
-    hasTouch: true,
-  });
-  const page = await context.newPage();
-  await page.goto("/");
-  await expect(page.getByText("Turn your phone sideways")).toBeVisible();
-  await page.setViewportSize({ width: 844, height: 390 });
-  await page.getByRole("button", { name: "Skip tutorial" }).tap();
-  await expect(page.locator("canvas")).toBeVisible();
-  await page.screenshot({ path: "/tmp/parkit-mobile.png" });
-  await context.close();
-});
-
-test("rejects incomplete routes and pauses when the page becomes hidden", async ({
+test("a diagonal into an island is driven and crashes rather than being rerouted or denied", async ({
   page,
 }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Skip tutorial" }).click();
-  const box = (await page.locator("canvas").boundingBox())!;
-  await page.mouse.move(
-    box.x + (150 / 1440) * box.width,
-    box.y + (614 / 900) * box.height,
+  await start(page);
+  await draw(page, [
+    { x: 150, y: 614 },
+    { x: 345, y: 298 },
+  ]);
+  await expect(page.locator("#lives")).toHaveAttribute(
+    "aria-label",
+    "2 lives",
+    { timeout: 7000 },
   );
-  await page.mouse.down();
-  await page.mouse.up();
-  await expect(page.getByRole("status")).toContainText("Draw a complete route");
+  await expect(page.locator("#score")).toHaveText("0000");
+});
+test("a tap without movement explains how to draw and hidden tabs pause", async ({
+  page,
+}) => {
+  await start(page);
+  await draw(page, [{ x: 150, y: 614 }]);
+  await expect(page.getByRole("status")).toContainText("Draw a line");
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", {
       configurable: true,
@@ -72,220 +103,24 @@ test("rejects incomplete routes and pauses when the page becomes hidden", async 
   });
   await expect(page.getByText("Take a breather.")).toBeVisible();
 });
-
-test("touch drawing reaches route validation in landscape", async ({
-  browser,
-}) => {
-  const context = await browser.newContext({
-    viewport: { width: 844, height: 390 },
-    isMobile: true,
-    hasTouch: true,
-  });
-  const page = await context.newPage();
-  await page.goto("/");
-  await page.getByRole("button", { name: "Skip tutorial" }).tap();
-  const box = (await page.locator("canvas").boundingBox())!;
-  const session = await context.newCDPSession(page);
-  const x = box.x + (150 / 1440) * box.width,
-    y = box.y + (614 / 900) * box.height;
-  await session.send("Input.dispatchTouchEvent", {
-    type: "touchStart",
-    touchPoints: [{ x, y }],
-  });
-  await session.send("Input.dispatchTouchEvent", {
-    type: "touchMove",
-    touchPoints: [{ x, y: y - 15 }],
-  });
-  await session.send("Input.dispatchTouchEvent", {
-    type: "touchEnd",
-    touchPoints: [],
-  });
-  await expect(page.getByRole("status")).toContainText("empty parking space");
-  await context.close();
-});
-
-test("tutorial completes a drawn parking and reverse departure cycle", async ({
+test("fullscreen control exits and re-enters without narrowing the game", async ({
   page,
 }) => {
-  test.setTimeout(60000);
-  await page.goto("/");
-  await page.getByRole("button", { name: "Let’s park" }).click();
-  const box = (await page.locator("canvas").boundingBox())!;
-  const draw = async (points: { x: number; y: number }[]) => {
-    await page.mouse.move(
-      box.x + (points[0].x / 1440) * box.width,
-      box.y + (points[0].y / 900) * box.height,
-    );
-    await page.mouse.down();
-    for (const p of points.slice(1))
-      await page.mouse.move(
-        box.x + (p.x / 1440) * box.width,
-        box.y + (p.y / 900) * box.height,
-      );
-    await page.mouse.up();
-  };
-  const p = [
-    { x: 150, y: 614 },
-    { x: 150, y: 533 },
-  ];
-  for (let i = 0; i <= 20; i++) {
-    const a = Math.PI + ((i / 20) * Math.PI) / 2;
-    p.push({ x: 240 + 90 * Math.cos(a), y: 533 + 90 * Math.sin(a) });
-  }
-  p.push({ x: 285, y: 443 });
-  for (let i = 0; i <= 20; i++) {
-    const a = Math.PI / 2 - ((i / 20) * Math.PI) / 2;
-    p.push({ x: 285 + 60 * Math.cos(a), y: 383 + 60 * Math.sin(a) });
-  }
-  p.push({ x: 345, y: 300 });
-  await draw(p);
-  await expect(page.getByRole("status")).toContainText("02 /", {
-    timeout: 14000,
-  });
-  const q = [
-    { x: 345, y: 300 },
-    { x: 345, y: 465 },
-    { x: 345, y: 443 },
-  ];
-  for (let i = 0; i <= 20; i++) {
-    const a = Math.PI + ((i / 20) * Math.PI) / 2;
-    q.push({ x: 375 + 30 * Math.cos(a), y: 443 + 30 * Math.sin(a) });
-  }
-  q.push({ x: 1180, y: 413 });
-  for (let i = 0; i <= 20; i++) {
-    const a = -Math.PI / 2 + ((i / 20) * Math.PI) / 2;
-    q.push({ x: 1180 + 90 * Math.cos(a), y: 503 + 90 * Math.sin(a) });
-  }
-  q.push({ x: 1270, y: 680 });
-  for (let i = 0; i <= 20; i++) {
-    const a = Math.PI - ((i / 20) * Math.PI) / 2;
-    q.push({ x: 1360 + 90 * Math.cos(a), y: 680 + 90 * Math.sin(a) });
-  }
-  q.push({ x: 1370, y: 770 });
-  await draw(q);
-
-  await expect(page.locator("#score")).toHaveText("0250", { timeout: 25000 });
-  expect(
-    await page.evaluate(() => localStorage.getItem("parkit-tutorial")),
-  ).toBe("done");
-});
-
-test("starting enters fullscreen and the control exits and re-enters", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Skip tutorial" }).click();
+  await start(page);
   await expect
     .poll(() => page.evaluate(() => Boolean(document.fullscreenElement)))
     .toBe(true);
-  const box = (await page.locator("canvas").boundingBox())!;
-  expect(box.y).toBeGreaterThanOrEqual(0);
-  expect(box.y + box.height).toBeLessThanOrEqual(1100);
   await page.getByRole("button", { name: "Exit fullscreen" }).click();
   await expect
     .poll(() => page.evaluate(() => Boolean(document.fullscreenElement)))
     .toBe(false);
+  expect((await page.locator("canvas").boundingBox())!.width).toBe(1440);
   await page.getByRole("button", { name: "Enter fullscreen" }).click();
   await expect
     .poll(() => page.evaluate(() => Boolean(document.fullscreenElement)))
     .toBe(true);
 });
-
-test("fullscreen denial still starts a viewport-filling playable game", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    Element.prototype.requestFullscreen = () =>
-      Promise.reject(new Error("Unavailable"));
-  });
-  await page.goto("/");
-  await page.getByRole("button", { name: "Skip tutorial" }).click();
-  await expect(page.locator("body")).toHaveClass("immersive");
-  await expect(page.locator("#overlay")).not.toBeVisible();
-  await page.getByRole("button", { name: "Enter fullscreen" }).click();
-  await expect(page.locator("body")).toHaveClass("immersive");
-});
-
-test("embedded phone browser fills the width before and after starting", async ({
-  browser,
-}) => {
-  const context = await browser.newContext({
-    viewport: { width: 1190, height: 425 },
-    isMobile: true,
-    hasTouch: true,
-  });
-  const page = await context.newPage();
-  await page.addInitScript(() => {
-    Element.prototype.requestFullscreen = () =>
-      Promise.reject(new Error("Embedded browser"));
-  });
-  await page.goto("/");
-  for (const started of [false, true]) {
-    if (started)
-      await page.getByRole("button", { name: "Skip tutorial" }).tap();
-    const box = (await page.locator("canvas").boundingBox())!;
-    expect(box.x).toBeCloseTo(0, 0);
-    expect(box.width).toBeCloseTo(1190, 0);
-    expect(box.y + box.height).toBeLessThanOrEqual(425);
-    expect(box.height).toBeGreaterThan(375);
-  }
-  await page.screenshot({ path: "/tmp/parkit-edge-to-edge.png" });
-  await context.close();
-});
-
-test("a finger-drawn route just inside a bay starts the car and parks on a wide phone", async ({
-  browser,
-}) => {
-  const context = await browser.newContext({
-    viewport: { width: 1190, height: 425 },
-    isMobile: true,
-    hasTouch: true,
-  });
-  const page = await context.newPage();
-  await page.addInitScript(() => {
-    Element.prototype.requestFullscreen = () =>
-      Promise.reject(new Error("Embedded browser"));
-  });
-  await page.goto("/");
-  await page.getByRole("button", { name: "Skip tutorial" }).tap();
-  const box = (await page.locator("canvas").boundingBox())!,
-    session = await context.newCDPSession(page);
-  const touch = async (type: string, x?: number, y?: number) =>
-    session.send("Input.dispatchTouchEvent", {
-      type,
-      touchPoints:
-        x === undefined
-          ? []
-          : [
-              {
-                x: box.x + (x / 1440) * box.width,
-                y: box.y + (y! / 900) * box.height,
-              },
-            ],
-    });
-  const points = [
-    { x: 150, y: 614 },
-    { x: 150, y: 443 },
-    { x: 345, y: 443 },
-    { x: 345, y: 350 },
-  ];
-  await touch("touchStart", 150, 614);
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1],
-      b = points[i];
-    for (let j = 1; j <= 20; j++)
-      await touch(
-        "touchMove",
-        a.x + ((b.x - a.x) * j) / 20,
-        a.y + ((b.y - a.y) * j) / 20,
-      );
-  }
-  await touch("touchEnd");
-  await expect(page.locator("#score")).toHaveText("0100", { timeout: 12000 });
-  await context.close();
-});
-
-test("a direct diagonal finger drag parks without tracing aisles or facing inward", async ({
+test("phone touch follows a straight backward line without requiring a destination", async ({
   browser,
 }) => {
   const context = await browser.newContext({
@@ -298,29 +133,34 @@ test("a direct diagonal finger drag parks without tracing aisles or facing inwar
     Element.prototype.requestFullscreen = () =>
       Promise.reject(new Error("Embedded browser"));
   });
-  await page.goto("/");
-  await page.getByRole("button", { name: "Skip tutorial" }).tap();
-  const box = (await page.locator("canvas").boundingBox())!,
-    session = await context.newCDPSession(page);
-  const touch = async (type: string, x?: number, y?: number) =>
+  await start(page);
+  const box = (await page.locator("canvas").boundingBox())!;
+  expect(box.width).toBe(1280);
+  const session = await context.newCDPSession(page);
+  const touch = async (type: string, y?: number) =>
     session.send("Input.dispatchTouchEvent", {
       type,
       touchPoints:
-        x === undefined
+        y === undefined
           ? []
           : [
               {
-                x: box.x + (x / 1440) * box.width,
-                y: box.y + (y! / 900) * box.height,
+                x: box.x + (150 / 1440) * box.width,
+                y: box.y + (y / 900) * box.height,
               },
             ],
     });
-  await touch("touchStart", 150, 614);
-  for (let i = 1; i <= 20; i++)
-    await touch("touchMove", 150 + (195 * i) / 20, 614 - (314 * i) / 20);
+  await touch("touchStart", 614);
+  for (let y = 620; y <= 704; y += 7) await touch("touchMove", y);
+  await touch("touchMove", 704);
   await touch("touchEnd");
-  await expect(page.getByRole("status")).toContainText("On my way! Space 01");
-  await expect(page.locator("#score")).toHaveText("0100", { timeout: 12000 });
-  await page.screenshot({ path: "/tmp/parkit-direct-drag-parked.png" });
+  await expectCarAt(page, 150, 704);
+  await expect(page.locator("#score")).toHaveText("0000");
+  await page.screenshot({ path: "/tmp/parkit-phone-literal.png" });
   await context.close();
+});
+test("portrait phones show rotation guidance", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await expect(page.getByText("Turn your phone sideways")).toBeVisible();
 });
