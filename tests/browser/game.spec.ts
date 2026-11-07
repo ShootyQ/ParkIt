@@ -232,3 +232,55 @@ test("embedded phone browser fills the width before and after starting", async (
   await page.screenshot({ path: "/tmp/parkit-edge-to-edge.png" });
   await context.close();
 });
+
+test("a finger-drawn route just inside a bay starts the car and parks on a wide phone", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 1190, height: 425 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    Element.prototype.requestFullscreen = () =>
+      Promise.reject(new Error("Embedded browser"));
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Skip tutorial" }).tap();
+  const box = (await page.locator("canvas").boundingBox())!,
+    session = await context.newCDPSession(page);
+  const touch = async (type: string, x?: number, y?: number) =>
+    session.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints:
+        x === undefined
+          ? []
+          : [
+              {
+                x: box.x + (x / 1440) * box.width,
+                y: box.y + (y! / 900) * box.height,
+              },
+            ],
+    });
+  const points = [
+    { x: 150, y: 614 },
+    { x: 150, y: 443 },
+    { x: 345, y: 443 },
+    { x: 345, y: 350 },
+  ];
+  await touch("touchStart", 150, 614);
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1],
+      b = points[i];
+    for (let j = 1; j <= 20; j++)
+      await touch(
+        "touchMove",
+        a.x + ((b.x - a.x) * j) / 20,
+        a.y + ((b.y - a.y) * j) / 20,
+      );
+  }
+  await touch("touchEnd");
+  await expect(page.locator("#score")).toHaveText("0100", { timeout: 12000 });
+  await context.close();
+});

@@ -92,7 +92,7 @@ export const rectPoints = (r: Rect): Point[] => [
 export function smooth(points: Point[]): Point[] {
   if (points.length < 2) return points;
   let p = points;
-  for (let k = 0; k < 2; k++) {
+  for (let k = 0; k < 3; k++) {
     const n = [p[0]];
     for (let i = 0; i < p.length - 1; i++) {
       n.push(
@@ -136,12 +136,73 @@ export function parkingSpot(p: Point, a: number): Spot | undefined {
       ),
   );
 }
+/** Remove redundant pointer samples before smoothing: dense touch events must not create tighter turns. */
+function simplify(points: Point[], tolerance = 5): Point[] {
+  if (points.length < 3) return points;
+  const keep = new Set([0, points.length - 1]);
+  const pending = [[0, points.length - 1]];
+  while (pending.length) {
+    const [start, end] = pending.pop()!;
+    const a = points[start],
+      b = points[end],
+      dx = b.x - a.x,
+      dy = b.y - a.y,
+      length = dx * dx + dy * dy;
+    let farthest = -1,
+      max = tolerance * tolerance;
+    for (let i = start + 1; i < end; i++) {
+      const p = points[i],
+        t = length
+          ? Math.max(
+              0,
+              Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / length),
+            )
+          : 0;
+      const d = (p.x - a.x - t * dx) ** 2 + (p.y - a.y - t * dy) ** 2;
+      if (d > max) {
+        max = d;
+        farthest = i;
+      }
+    }
+    if (farthest >= 0) {
+      keep.add(farthest);
+      pending.push([start, farthest], [farthest, end]);
+    }
+  }
+  return [...keep].sort((a, b) => a - b).map((i) => points[i]);
+}
+/** Preserve the drawn route, but remove release jitter and fit its endpoint in the bay. */
+function parkingInput(raw: Point[]): Point[] {
+  if (raw.length < 2) return raw;
+  const end = raw[raw.length - 1];
+  const bay = spots.find(
+    (s) =>
+      end.x >= s.x && end.x <= s.x + s.w && end.y >= s.y && end.y <= s.y + s.h,
+  );
+  if (!bay) return raw;
+  const angle = bay.id < 8 ? -Math.PI / 2 : Math.PI / 2;
+  const footprint = corners({ x: 0, y: 0 }, angle);
+  const halfWidth = Math.max(...footprint.map((p) => Math.abs(p.x))) + 5;
+  const halfHeight = CAR_L / 2 + 5;
+  const fitted = {
+    x: Math.max(bay.x + halfWidth, Math.min(bay.x + bay.w - halfWidth, end.x)),
+    y: Math.max(
+      bay.y + halfHeight,
+      Math.min(bay.y + bay.h - halfHeight, end.y),
+    ),
+  };
+  let last = raw.length - 2;
+  // A few pixels of movement while lifting a finger must not reverse the heading.
+  while (last > 0 && distance(raw[last], end) < 12) last--;
+  return [...raw.slice(0, last + 1), fitted];
+}
 export function validate(
   car: Car,
   raw: Point[],
   cars: Car[],
 ): { error?: string; path: Point[]; spot?: number; gear: number } {
   const depart = car.state === "requesting-departure";
+  if (!depart) raw = parkingInput(simplify(raw));
   let path = smooth(raw),
     gear = -1;
   if (depart) {

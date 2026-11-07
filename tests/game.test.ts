@@ -201,3 +201,47 @@ it("keeps enlarged vehicle proportions and collision bounds aligned on wide phon
     setProjectionAspect(1);
   }
 });
+
+it("accepts a natural finger route ending just inside an open space", () => {
+  const g = new Game();
+  g.spawn();
+  const route = [
+    { x: 150, y: 614 },
+    { x: 150, y: 443 },
+    { x: 345, y: 443 },
+    { x: 345, y: 350 },
+  ];
+  expect(g.commit(g.cars[0], route)).toBeUndefined();
+  expect(g.cars[0].state).toBe("driving-in");
+});
+it("ignores a small release wobble inside a parking space", () => {
+  const g = new Game();
+  g.spawn();
+  const route = [...inbound(), { x: 348, y: 299 }, { x: 346, y: 301 }];
+  expect(g.commit(g.cars[0], route)).toBeUndefined();
+});
+
+it("accepts densely sampled touch corners as well as sparse mouse strokes", () => {
+  const g = new Game();
+  g.spawn();
+  const waypoints = [
+    { x: 150, y: 614 },
+    { x: 150, y: 443 },
+    { x: 345, y: 443 },
+    { x: 345, y: 350 },
+  ];
+  const raw: Point[] = [waypoints[0]];
+  for (let i = 1; i < waypoints.length; i++) {
+    const a = waypoints[i - 1],
+      b = waypoints[i];
+    for (let j = 1; j <= 40; j++)
+      raw.push({
+        x: a.x + ((b.x - a.x) * j) / 40,
+        y: a.y + ((b.y - a.y) * j) / 40,
+      });
+  }
+  expect(g.commit(g.cars[0], raw)).toBeUndefined();
+  g.tutorial = true;
+  for (let i = 0; i < 900; i++) g.update(1 / 60);
+  expect(g.score).toBe(100);
+});
