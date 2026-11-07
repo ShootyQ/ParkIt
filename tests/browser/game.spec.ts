@@ -206,8 +206,10 @@ test("portrait phones show rotation guidance", async ({ page }) => {
 test("normal play continuously introduces moving cars from different sides", async ({
   page,
 }) => {
+  await page.clock.install();
   await page.goto("/");
   await page.getByRole("button", { name: "Skip tutorial" }).click();
+  await page.clock.runFor(6500);
   await expect
     .poll(
       () =>
@@ -231,4 +233,58 @@ test("normal play continuously introduces moving cars from different sides", asy
     )
     .toBe(3);
   await page.screenshot({ path: "/tmp/parkit-incoming-traffic.png" });
+});
+
+test("touch can grab a moving car beside its visible body on a wide phone", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 570 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.addInitScript(() => {
+    Element.prototype.requestFullscreen = () =>
+      Promise.reject(new Error("Embedded browser"));
+  });
+  await start(page);
+  const box = (await page.locator("canvas").boundingBox())!,
+    car = await firstCar(page),
+    session = await context.newCDPSession(page);
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: [
+      {
+        x: box.x + (car.x / 1440) * box.width + 25,
+        y: box.y + (car.y / 900) * box.height + 25,
+      },
+    ],
+  });
+  for (let y = car.y + 3; y < 835; y += 4)
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [
+        {
+          x: box.x + (150 / 1440) * box.width,
+          y: box.y + (y / 900) * box.height,
+        },
+      ],
+    });
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchMove",
+    touchPoints: [
+      {
+        x: box.x + (150 / 1440) * box.width,
+        y: box.y + (835 / 900) * box.height,
+      },
+    ],
+  });
+  await session.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: [],
+  });
+  await expectCarAt(page, 150, 835);
+  await expect(page.locator("#lives")).toHaveAttribute("aria-label", "3 lives");
+  await context.close();
 });

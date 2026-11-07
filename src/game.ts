@@ -42,8 +42,8 @@ export const spots: Spot[] = Array.from({ length: 16 }, (_, id) => ({
 export function setProjectionAspect(ratio: number) {
   projectionAspect = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
   for (const s of spots) {
-    s.w = (CAR_W + 12) / projectionAspect;
-    s.h = CAR_L + 14;
+    s.w = (CAR_W + 24) / projectionAspect;
+    s.h = CAR_L + 28;
     s.x = 345 + (s.id % 8) * 100 - s.w / 2;
     s.y = (s.id < 8 ? 298 : 588) - s.h / 2;
   }
@@ -54,10 +54,10 @@ export function projectedHeading(a: number) {
 }
 export const obstacles: Rect[] = [
   { x: 0, y: 0, w: 1440, h: 187 },
-  { x: 245, y: 218, w: 35, h: 150 },
-  { x: 1110, y: 218, w: 40, h: 150 },
-  { x: 245, y: 518, w: 35, h: 150 },
-  { x: 1110, y: 518, w: 40, h: 150 },
+  { x: 225, y: 248, w: 24, h: 100 },
+  { x: 1140, y: 248, w: 26, h: 100 },
+  { x: 225, y: 548, w: 24, h: 100 },
+  { x: 1140, y: 548, w: 26, h: 100 },
 ];
 export const distance = (a: Point, b: Point) =>
   Math.hypot(a.x - b.x, a.y - b.y);

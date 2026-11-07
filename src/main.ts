@@ -1,4 +1,5 @@
 import "./style.css";
+import { pickCar } from "./input";
 import {
   Game,
   CAR_SCALE,
@@ -21,10 +22,12 @@ const canvas = document.querySelector("canvas")!,
   overlay = document.querySelector<HTMLDivElement>("#overlay")!,
   toast = document.querySelector<HTMLDivElement>("#toast")!;
 let projectionAspect = 1;
+let viewScale: Point = { x: 1, y: 1 };
 function resizeProjection() {
   const bounds = canvas.getBoundingClientRect();
   if (!bounds.height) return;
-  projectionAspect = bounds.width / W / (bounds.height / H);
+  viewScale = { x: bounds.width / W, y: bounds.height / H };
+  projectionAspect = viewScale.x / viewScale.y;
   setProjectionAspect(projectionAspect);
 }
 new ResizeObserver(resizeProjection).observe(canvas);
@@ -246,9 +249,7 @@ function point(e: PointerEvent): Point {
 canvas.addEventListener("pointerdown", (e) => {
   if (!started || game.paused || game.over) return;
   const p = point(e);
-  selected = game.cars.find(
-    (c) => c.state !== "crashed" && distance(c, p) < 44,
-  );
+  selected = pickCar(game.cars, p, viewScale, e.pointerType);
   if (selected) {
     game.heldCar = selected.id;
     strokeStart = { x: e.clientX, y: e.clientY };
@@ -515,8 +516,8 @@ function render() {
     rr(o.x + 3, o.y + 4, o.w, o.h, 15, "#0003");
     rr(o.x, o.y, o.w, o.h, 14, "#b8bca2");
     rr(o.x + 5, o.y + 5, o.w - 10, o.h - 10, 10, "#6c7e5e");
-    tree(o.x + o.w / 2, o.y + 35, 22);
-    tree(o.x + o.w / 2, o.y + 108, 20);
+    tree(o.x + o.w / 2, o.y + 26, 18);
+    tree(o.x + o.w / 2, o.y + o.h - 26, 16);
   }
   // Side gates share the aisle; traffic enters straight from both directions.
   ctx.fillStyle = "#414b49";
@@ -577,6 +578,19 @@ function render() {
         c.undirected ? "#e8c48635" : "#b9d3b755",
         true,
       );
+  if (selected) {
+    ctx.save();
+    ctx.translate(selected.x, selected.y);
+    ctx.scale(1 / projectionAspect, 1);
+    ctx.beginPath();
+    ctx.arc(0, 0, Math.max(48, 27 / viewScale.y), 0, Math.PI * 2);
+    ctx.fillStyle = "#cce6a515";
+    ctx.fill();
+    ctx.lineWidth = 2 / viewScale.y;
+    ctx.strokeStyle = "#d6ecaeaa";
+    ctx.stroke();
+    ctx.restore();
+  }
   for (const c of game.cars) car(c);
   if (selected && draw.length > 1) {
     const v = validate(selected, draw, game.cars);
@@ -601,11 +615,7 @@ function render() {
       text("D", g.x - 6, g.y + 6, 16, "#344b3c");
     }
   }
-  if (
-    hover &&
-    !selected &&
-    game.cars.some((c) => c.state !== "crashed" && distance(c, hover!) < 44)
-  )
+  if (hover && !selected && pickCar(game.cars, hover, viewScale))
     canvas.style.cursor = "grab";
   else canvas.style.cursor = selected ? "crosshair" : "default";
 }

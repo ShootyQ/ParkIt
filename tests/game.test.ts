@@ -117,8 +117,8 @@ describe("parking as an outcome", () => {
   it("uses nearly car-sized bays on desktop and wide phones", () => {
     for (const ratio of [0.85, 1, 2.5]) {
       setProjectionAspect(ratio);
-      expect(spots[0].w * ratio).toBeCloseTo(CAR_W + 12);
-      expect(spots[0].h).toBeCloseTo(CAR_L + 14);
+      expect(spots[0].w * ratio).toBeCloseTo(CAR_W + 24);
+      expect(spots[0].h).toBeCloseTo(CAR_L + 28);
       expect(parkingSpot({ x: 345, y: 298 }, -Math.PI / 2)?.id).toBe(0);
       expect(parkingSpot({ x: 345, y: 298 }, Math.PI / 2)?.id).toBe(0);
       expect(parkingSpot({ x: 345, y: 330 }, -Math.PI / 2)).toBeUndefined();
@@ -352,4 +352,19 @@ describe("constant traffic and parking stays", () => {
     expect(game.exits).toBe(1);
     expect(game.lives).toBe(3);
   });
+});
+
+it("allows an off-center parking stop with a little steering angle", () => {
+  setProjectionAspect(1.8);
+  expect(parkingSpot({ x: 349, y: 304 }, -Math.PI / 2 + 0.08)?.id).toBe(0);
+});
+it("leaves room to drive across the ends of the shortened curb islands", () => {
+  const { game, car } = setup();
+  car.x = 150;
+  car.y = 515;
+  car.angle = 0;
+  game.commit(car, [car, { x: 330, y: 515 }]);
+  game.update(2.1);
+  expect(game.lives).toBe(3);
+  expect(car.x).toBeCloseTo(330);
 });
